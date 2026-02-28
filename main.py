@@ -2,7 +2,37 @@ import pygame
 from noise import pnoise2
 import random
 
+def draw_text(surface, text, size, x, y, color=(255,255,255)):
+    font = pygame.font.SysFont(None, size)
+    text_surface = font.render(text, True, color)
+    text_rect = text_surface.get_rect(center=(x, y))
+    surface.blit(text_surface, text_rect)
+
+def start_screen(screen, width, height):
+    play_rect = pygame.Rect(width//2-100, height//2-40, 200, 50)
+    settings_rect = pygame.Rect(width//2-100, height//2+30, 200, 50)
+    while True:
+        screen.fill((30, 30, 30))
+        draw_text(screen, "Mole in da hole", 60, width//2, height//2-120)
+        pygame.draw.rect(screen, (70, 130, 180), play_rect)
+        draw_text(screen, "Play", 40, width//2, height//2-15)
+        pygame.draw.rect(screen, (120, 120, 120), settings_rect)
+        draw_text(screen, "Settings", 40, width//2, height//2+55)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = event.pos
+                if play_rect.collidepoint(mx, my):
+                    return 'play'
+                if settings_rect.collidepoint(mx, my):
+                    return 'settings'
+        pygame.display.flip()
+        pygame.time.Clock().tick(60)
+
 pygame.init()
+
 
 # Initial window size
 width, height = 800, 600
@@ -70,6 +100,14 @@ def ensure_map_area(top, left, bottom, right):
 def world_to_screen(wx, wy, cam_x, cam_y):
     """Convert world (float cell) coords to pixel screen coords."""
     return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
+
+# start screen before game loop
+choice = start_screen(screen, width, height)
+if choice == 'settings':
+    screen.fill((30,30,30))
+    draw_text(screen, "Settings coming soon!", 40, width//2, height//2)
+    pygame.display.flip()
+    pygame.time.wait(1500)
 
 while running:
     for event in pygame.event.get():
