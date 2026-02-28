@@ -1,6 +1,7 @@
 import pygame
 from noise import pnoise2
 import random
+import math
 
 def draw_text(surface, text, size, x, y, color=(255,255,255)):
     font = pygame.font.SysFont(None, size)
@@ -114,6 +115,16 @@ def world_to_screen(wx, wy, cam_x, cam_y):
     """Convert world (float cell) coords to pixel screen coords."""
     return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
 
+
+# Enemy setup
+enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
+num_enemies = 3
+enemy_speed = 2.5 / cell_size
+enemy_positions = [
+    [world_x + random.randint(-10, 10), world_y + random.randint(-10, 10)]
+    for _ in range(num_enemies)
+]
+
 # start screen before game loop
 choice = start_screen(screen, width, height)
 if choice == 'settings':
@@ -202,6 +213,25 @@ while running:
                 screen.blit(rock_img, (ipx, ipy))
             elif tile == 'air':
                 pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+
+    # enemy ai
+    for i, (ex, ey) in enumerate(enemy_positions):
+        dx = world_x - ex
+        dy = world_y - ey
+        dist = math.hypot(dx, dy)
+        if dist > 0.1:
+            move_x = enemy_speed * dx / dist
+            move_y = enemy_speed * dy / dist
+            next_ex = ex + move_x
+            next_ey = ey + move_y
+            # dont move into the rocks
+            if map_grid.get((int(next_ey), int(next_ex)), None) != 'rock':
+                enemy_positions[i][0] = next_ex
+                enemy_positions[i][1] = next_ey
+
+    for ex, ey in enemy_positions:
+        esx, esy = world_to_screen(ex, ey, cam_x, cam_y)
+        screen.blit(enemy_img, (int(esx), int(esy)))
 
     # draw the trail
     for i, (tx, ty) in enumerate(trail):
