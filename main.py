@@ -34,6 +34,8 @@ trail_length = 20
 soil_color = (160, 82, 45)
 rock_color = (100, 100, 100)
 air_color = (30, 30, 30)
+darker_soil = (110, 50, 20)
+lighter_soil = (210, 140, 80)
 fossil_chance = 0.07
 rock_chance = 0.10
 seed = random.randint(0, 10000)
@@ -50,7 +52,14 @@ def generate_tile(row, col):
         else:
             return 'soil'
     else:
-        return 'air'
+        # Instead of pure air, randomly fill with darker/lighter soil
+        r = random.random()
+        if r < 0.33:
+            return 'darker_soil'
+        elif r < 0.66:
+            return 'lighter_soil'
+        else:
+            return 'air'
 
 def ensure_map_area(top, left, bottom, right):
     for row in range(top, bottom):
@@ -118,6 +127,10 @@ while running:
             elif tile == 'rock':
                 pygame.draw.rect(screen, rock_color, (ipx, ipy, cell_size + 1, cell_size + 1))
                 screen.blit(rock_img, (ipx, ipy))
+            elif tile == 'darker_soil':
+                pygame.draw.rect(screen, darker_soil, (ipx, ipy, cell_size + 1, cell_size + 1))
+            elif tile == 'lighter_soil':
+                pygame.draw.rect(screen, lighter_soil, (ipx, ipy, cell_size + 1, cell_size + 1))
             elif tile == 'air':
                 pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
 
