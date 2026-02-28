@@ -12,6 +12,9 @@ def draw_text(surface, text, size, x, y, color=(255,255,255)):
 def start_screen(screen, width, height):
     play_rect = pygame.Rect(width//2-100, height//2-40, 200, 50)
     settings_rect = pygame.Rect(width//2-100, height//2+30, 200, 50)
+    
+    pygame.mixer.music.load("assets/loading.flac")
+    pygame.mixer.music.play(-1)
     while True:
         screen.fill((30, 30, 30))
         draw_text(screen, "Mole in da hole", 60, width//2, height//2-120)
@@ -26,16 +29,18 @@ def start_screen(screen, width, height):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 if play_rect.collidepoint(mx, my):
+                    pygame.mixer.music.stop()
                     return 'play'
                 if settings_rect.collidepoint(mx, my):
                     return 'settings'
         pygame.display.flip()
         pygame.time.Clock().tick(60)
 
+
 pygame.init()
+pygame.mixer.init()
 
 
-# Initial window size
 width, height = 800, 600
 cell_size = 40
 screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
@@ -126,8 +131,12 @@ enemy_positions = [
 ]
 
 # start screen before game loop
+
 choice = start_screen(screen, width, height)
-if choice == 'settings':
+if choice == 'play':
+    pygame.mixer.music.load("assets/main.flac")
+    pygame.mixer.music.play(-1)
+elif choice == 'settings':
     screen.fill((30,30,30))
     draw_text(screen, "Settings coming soon!", 40, width//2, height//2)
     pygame.display.flip()
