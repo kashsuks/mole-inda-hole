@@ -4,23 +4,22 @@ import random
 
 pygame.init()
 
-width, height = 600, 400
-screen = pygame.display.set_mode((width, height))
+
+width, height = 800, 600
 cell_size = 40
+screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 cols = width // cell_size
 rows = height // cell_size
 
 pygame.display.set_caption('Mole in da hole')
 
 
-# Infinite map setup
 running = True
 square_size = 40
-speed = 5
+speed = 5  # fast mole like original
 clock = pygame.time.Clock()
 
-# Mole position in world coordinates (not just screen)
-world_x, world_y = cols // 2, rows // 2
+world_x, world_y = float(cols // 2), float(rows // 2)
 offset_x, offset_y = 0, 0  # top-left cell of the visible screen
 
 mole_img = pygame.image.load("assets/mole.png")
@@ -42,7 +41,7 @@ fossil_chance = 0.07
 rock_chance = 0.10
 seed = random.randint(0, 10000)
 
-# Map grid is a dict of (row, col) -> tile
+# map grid for (row, col)
 map_grid = {}
 def generate_tile(row, col):
     n = pnoise2(col * 0.15 + seed, row * 0.15 + seed)
@@ -67,37 +66,39 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        elif event.type == pygame.VIDEORESIZE:
+            width, height = event.w, event.h
+            screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+            cols = width // cell_size
+            rows = height // cell_size
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_f:
+                pygame.display.toggle_fullscreen()
 
     keys = pygame.key.get_pressed()
-    dx, dy = 0, 0
+    dx, dy = 0.0, 0.0
     if keys[pygame.K_w]:
-        dy = -1
+        dy -= speed / cell_size
     if keys[pygame.K_s]:
-        dy = 1
+        dy += speed / cell_size
     if keys[pygame.K_a]:
-        dx = -1
+        dx -= speed / cell_size
     if keys[pygame.K_d]:
-        dx = 1
+        dx += speed / cell_size
 
-    # move the mole in the world coords
     world_x += dx
     world_y += dy
+    world_x = max(-10000, min(world_x, 10000))
+    world_y = max(-10000, min(world_y, 10000))
 
-    # shift offset
-    if world_x < offset_x:
-        offset_x = world_x
-    if world_x >= offset_x + cols:
-        offset_x = world_x - cols + 1
-    if world_y < offset_y:
-        offset_y = world_y
-    if world_y >= offset_y + rows:
-        offset_y = world_y - rows + 1
+    offset_x = int(world_x - cols // 2)
+    offset_y = int(world_y - rows // 2)
 
     ensure_map_area(offset_y, offset_x, offset_y + rows, offset_x + cols)
 
     # screen pos
-    mole_screen_x = (world_x - offset_x) * cell_size
-    mole_screen_y = (world_y - offset_y) * cell_size
+    mole_screen_x = int((world_x - offset_x) * cell_size)
+    mole_screen_y = int((world_y - offset_y) * cell_size)
     trail.append((mole_screen_x, mole_screen_y))
     if len(trail) > trail_length:
         trail.pop(0)
