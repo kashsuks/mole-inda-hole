@@ -4,7 +4,7 @@ import random
 
 pygame.init()
 
-
+# Initial window size
 width, height = 800, 600
 cell_size = 40
 screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
@@ -13,14 +13,12 @@ rows = height // cell_size
 
 pygame.display.set_caption('Mole in da hole')
 
-
 running = True
 square_size = 40
 speed = 5  # fast mole like original
 clock = pygame.time.Clock()
 
 world_x, world_y = float(cols // 2), float(rows // 2)
-offset_x, offset_y = 0, 0  # top-left cell of the visible screen
 
 mole_img = pygame.image.load("assets/mole.png")
 mole_img = pygame.transform.scale(mole_img, (square_size, square_size))
@@ -30,19 +28,18 @@ fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
 rock_img = pygame.image.load("assets/rock1.png")
 rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
 
-trail = []  # (x, y) coords
+trail = []  # world-space float coords
 trail_length = 20
 
-## Perlin noise map gen
-soil_color = (160, 82, 45)  # new shade for soil
+soil_color = (160, 82, 45)
 rock_color = (100, 100, 100)
 air_color = (30, 30, 30)
 fossil_chance = 0.07
 rock_chance = 0.10
 seed = random.randint(0, 10000)
 
-# map grid for (row, col)
 map_grid = {}
+
 def generate_tile(row, col):
     n = pnoise2(col * 0.15 + seed, row * 0.15 + seed)
     if n > -0.2:
@@ -61,7 +58,10 @@ def ensure_map_area(top, left, bottom, right):
             if (row, col) not in map_grid:
                 map_grid[(row, col)] = generate_tile(row, col)
 
-# basic ass pygame loop
+def world_to_screen(wx, wy, cam_x, cam_y):
+    """Convert world (float cell) coords to pixel screen coords."""
+    return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -91,42 +91,47 @@ while running:
     world_x = max(-10000, min(world_x, 10000))
     world_y = max(-10000, min(world_y, 10000))
 
-    offset_x = int(world_x - cols // 2)
-    offset_y = int(world_y - rows // 2)
+    cam_x = world_x - cols / 2
+    cam_y = world_y - rows / 2
 
-    ensure_map_area(offset_y, offset_x, offset_y + rows, offset_x + cols)
+    tile_left  = int(cam_x) - 1
+    tile_top   = int(cam_y) - 1
+    tile_right  = tile_left + cols + 3
+    tile_bottom = tile_top  + rows + 3
+    ensure_map_area(tile_top, tile_left, tile_bottom, tile_right)
 
-    # screen pos
-    mole_screen_x = int((world_x - offset_x) * cell_size)
-    mole_screen_y = int((world_y - offset_y) * cell_size)
-    trail.append((mole_screen_x, mole_screen_y))
+    trail.append((world_x, world_y))
     if len(trail) > trail_length:
         trail.pop(0)
 
-    for row in range(offset_y, offset_y + rows):
-        for col in range(offset_x, offset_x + cols):
+    for row in range(tile_top, tile_bottom):
+        for col in range(tile_left, tile_right):
             tile = map_grid[(row, col)]
-            px, py = (col - offset_x) * cell_size, (row - offset_y) * cell_size
+            px = (col - cam_x) * cell_size
+            py = (row - cam_y) * cell_size
+            ipx, ipy = int(px), int(py)
             if tile == 'soil':
-                pygame.draw.rect(screen, soil_color, (px, py, cell_size, cell_size))
+                pygame.draw.rect(screen, soil_color, (ipx, ipy, cell_size + 1, cell_size + 1))
             elif tile == 'fossil':
-                pygame.draw.rect(screen, soil_color, (px, py, cell_size, cell_size))
-                screen.blit(fossil_img, (px, py))
+                pygame.draw.rect(screen, soil_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+                screen.blit(fossil_img, (ipx, ipy))
             elif tile == 'rock':
-                pygame.draw.rect(screen, rock_color, (px, py, cell_size, cell_size))
-                screen.blit(rock_img, (px, py))
+                pygame.draw.rect(screen, rock_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+                screen.blit(rock_img, (ipx, ipy))
             elif tile == 'air':
-                pygame.draw.rect(screen, air_color, (px, py, cell_size, cell_size))
+                pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
 
-    # draw the trail with the fading brown
+    # draw the trail
     for i, (tx, ty) in enumerate(trail):
         alpha = int(255 * (i + 1) / trail_length)
+        spx, spy = world_to_screen(tx, ty, cam_x, cam_y)
         soil = pygame.Surface((square_size, square_size), pygame.SRCALPHA)
         soil.fill((139, 69, 19, alpha))
-        screen.blit(soil, (tx, ty))
+        screen.blit(soil, (int(spx), int(spy)))
 
-    # Draw mole
-    screen.blit(mole_img, (mole_screen_x, mole_screen_y))
+    # render mole and the correct pos
+    mole_sx, mole_sy = world_to_screen(world_x, world_y, cam_x, cam_y)
+    screen.blit(mole_img, (int(mole_sx), int(mole_sy)))
 
     pygame.display.flip()
     clock.tick(60)
