@@ -55,8 +55,13 @@ fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
 rock_img = pygame.image.load("assets/rock1.png")
 rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
 ## Load dirt images for soil
-mole_img = pygame.image.load("assets/mole.png")
-mole_img = pygame.transform.scale(mole_img, (square_size, square_size))
+dirt_imgs = [
+    pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
+    for i in range(1, 4)
+]
+mole_img_orig = pygame.image.load("assets/mole.png")
+mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
+mole_img = mole_img_orig
 dirt_imgs = [
     pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
     for i in range(1, 4)
@@ -117,6 +122,7 @@ if choice == 'settings':
     pygame.display.flip()
     pygame.time.wait(1500)
 
+last_dir = 'down'  # Track last direction for orientation
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -132,14 +138,31 @@ while running:
 
     keys = pygame.key.get_pressed()
     dx, dy = 0.0, 0.0
+    dir_now = None
     if keys[pygame.K_w]:
         dy -= speed / cell_size
+        dir_now = 'up'
     if keys[pygame.K_s]:
         dy += speed / cell_size
+        dir_now = 'down'
     if keys[pygame.K_a]:
         dx -= speed / cell_size
+        dir_now = 'left'
     if keys[pygame.K_d]:
         dx += speed / cell_size
+        dir_now = 'right'
+
+    if dir_now:
+        last_dir = dir_now
+
+        if last_dir == 'up':
+            mole_img = mole_img_orig
+        elif last_dir == 'down':
+            mole_img = pygame.transform.rotate(mole_img_orig, 180)
+        elif last_dir == 'left':
+            mole_img = pygame.transform.rotate(mole_img_orig, 90)
+        elif last_dir == 'right':
+            mole_img = pygame.transform.rotate(mole_img_orig, -90)
 
     next_x = world_x + dx
     next_y = world_y + dy
