@@ -95,10 +95,14 @@ while running:
     if keys[pygame.K_d]:
         dx += speed / cell_size
 
-    world_x += dx
-    world_y += dy
-    world_x = max(-10000, min(world_x, 10000))
-    world_y = max(-10000, min(world_y, 10000))
+    next_x = world_x + dx
+    next_y = world_y + dy
+    check_tile = map_grid.get((int(next_y), int(next_x)), None)
+    if check_tile != 'rock':
+        world_x = next_x
+        world_y = next_y
+        world_x = max(-10000, min(world_x, 10000))
+        world_y = max(-10000, min(world_y, 10000))
 
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
