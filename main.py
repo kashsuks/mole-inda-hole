@@ -50,9 +50,17 @@ clock = pygame.time.Clock()
 
 world_x, world_y = float(cols // 2), float(rows // 2)
 
+fossil_img = pygame.image.load("assets/fossil1.png")
+fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
+rock_img = pygame.image.load("assets/rock1.png")
+rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
+## Load dirt images for soil
 mole_img = pygame.image.load("assets/mole.png")
 mole_img = pygame.transform.scale(mole_img, (square_size, square_size))
-
+dirt_imgs = [
+    pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
+    for i in range(1, 4)
+]
 fossil_img = pygame.image.load("assets/fossil1.png")
 fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
 rock_img = pygame.image.load("assets/rock1.png")
@@ -80,14 +88,14 @@ def generate_tile(row, col):
         elif n > 0.1 and random.random() < fossil_chance:
             return 'fossil'
         else:
-            return 'soil'
+            # Pick a random dirt image for soil
+            return f'dirt{random.randint(1,3)}'
     else:
-        # Instead of pure air, randomly fill with darker/lighter soil
         r = random.random()
         if r < 0.33:
-            return 'darker_soil'
+            return f'dirt{random.randint(1,3)}'
         elif r < 0.66:
-            return 'lighter_soil'
+            return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
 
@@ -161,18 +169,14 @@ while running:
             px = (col - cam_x) * cell_size
             py = (row - cam_y) * cell_size
             ipx, ipy = int(px), int(py)
-            if tile == 'soil':
-                pygame.draw.rect(screen, soil_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+            if tile.startswith('dirt'):
+                idx = int(tile[-1]) - 1
+                screen.blit(dirt_imgs[idx], (ipx, ipy))
             elif tile == 'fossil':
-                pygame.draw.rect(screen, soil_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+                screen.blit(dirt_imgs[0], (ipx, ipy))
                 screen.blit(fossil_img, (ipx, ipy))
             elif tile == 'rock':
-                pygame.draw.rect(screen, rock_color, (ipx, ipy, cell_size + 1, cell_size + 1))
                 screen.blit(rock_img, (ipx, ipy))
-            elif tile == 'darker_soil':
-                pygame.draw.rect(screen, darker_soil, (ipx, ipy, cell_size + 1, cell_size + 1))
-            elif tile == 'lighter_soil':
-                pygame.draw.rect(screen, lighter_soil, (ipx, ipy, cell_size + 1, cell_size + 1))
             elif tile == 'air':
                 pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
 
