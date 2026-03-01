@@ -70,12 +70,10 @@ dirt_imgs = [
     for i in range(1, 4)
 ]
 
-# Load key images
 w_heart_img = pygame.image.load("assets/heart-full.png")
 half_heart_img = pygame.image.load("assets/heart-half.png")
 empty_heart_img = pygame.image.load("assets/heart-empty.png")
 
-# Optionally scale hearts for UI
 heart_size = 40
 w_heart_img = pygame.transform.scale(w_heart_img, (heart_size, heart_size))
 half_heart_img = pygame.transform.scale(half_heart_img, (heart_size, heart_size))
@@ -85,12 +83,18 @@ a_key_img = pygame.image.load("assets/a_key.png")
 s_key_img = pygame.image.load("assets/s_key.png")
 d_key_img = pygame.image.load("assets/d_key.png")
 
-# Optionally scale keys for UI
 key_size = 48
 w_key_img = pygame.transform.scale(w_key_img, (key_size, key_size))
 a_key_img = pygame.transform.scale(a_key_img, (key_size, key_size))
 s_key_img = pygame.transform.scale(s_key_img, (key_size, key_size))
 d_key_img = pygame.transform.scale(d_key_img, (key_size, key_size))
+
+# slash and split animatons
+slash_img = pygame.image.load("assets/Slash.png")
+slash_width, slash_height = slash_img.get_size()
+slash_frame_width = slash_width // 6
+slash_big_size = int(square_size * 4)
+slash_frames = [pygame.transform.scale(slash_img.subsurface(pygame.Rect(i * slash_frame_width, 0, slash_frame_width, slash_height)), (slash_big_size, slash_big_size)) for i in range(6)]
 mole_img_orig = pygame.image.load("assets/mole.png")
 mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
 mole_img = mole_img_orig
@@ -170,6 +174,8 @@ coin_tiles = set()
 # start screen before game loop
 max_health = 6  # 3 hearts, each heart = 2 health
 health = max_health
+shake_time = 0
+shake_intensity = 0
 
 choice = start_screen(screen, width, height)
 if choice == 'play':
@@ -184,6 +190,11 @@ elif choice == 'settings':
 coin_count = 0
 last_dir = 'down'  # Track last direction for orientation
 while running:
+    # Slash animation state
+    player_slash_frame = None
+    player_slash_time = 0
+    enemy_slash_frames = [None for _ in range(num_enemies)]
+    enemy_slash_times = [0 for _ in range(num_enemies)]
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -197,6 +208,10 @@ while running:
                 pygame.display.toggle_fullscreen()
 
     keys = pygame.key.get_pressed()
+    # Player attack (space key)
+    if keys[pygame.K_SPACE] and player_slash_frame is None:
+        player_slash_frame = 0
+        player_slash_time = pygame.time.get_ticks()
     dx, dy = 0.0, 0.0
     dir_now = None
     if keys[pygame.K_w]:
@@ -241,6 +256,10 @@ while running:
             coin_count += 1
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
+    # Apply screen shake if active
+    if shake_time > pygame.time.get_ticks():
+        cam_x += random.uniform(-shake_intensity, shake_intensity)
+        cam_y += random.uniform(-shake_intensity, shake_intensity)
 
     tile_left  = int(cam_x) - 1
     tile_top   = int(cam_y) - 1
@@ -288,10 +307,31 @@ while running:
                 enemy_positions[i][0] = next_ex
                 enemy_positions[i][1] = next_ey
 
+        # enemy attack stuff
+        dist = math.hypot(world_x - ex, world_y - ey)
+        if dist < 0.7 and health > 0:
+            if 'enemy_attack_cooldown' not in locals():
+                enemy_attack_cooldown = 0
+            if pygame.time.get_ticks() > enemy_attack_cooldown:
+                health -= 1
+                enemy_attack_cooldown = pygame.time.get_ticks() + 1000  # 1 second cooldown
+                enemy_slash_frames[i] = 0
+                enemy_slash_times[i] = pygame.time.get_ticks()
+                shake_time = pygame.time.get_ticks() + 200  # shake for 200ms
+                shake_intensity = 0.15
+
     for ex, ey in enemy_positions:
         esx, esy = world_to_screen(ex, ey, cam_x, cam_y)
         screen.blit(enemy_img, (int(esx), int(esy)))
-        # Enemy attack logic
+        if enemy_slash_frames[i] is not None:
+            frame = enemy_slash_frames[i]
+            if pygame.time.get_ticks() - enemy_slash_times[i] > 50:
+                enemy_slash_frames[i] += 1
+                enemy_slash_times[i] = pygame.time.get_ticks()
+            if enemy_slash_frames[i] < 6:
+                screen.blit(slash_frames[enemy_slash_frames[i]], (int(esx), int(esy)))
+            else:
+                enemy_slash_frames[i] = None
         dist = math.hypot(world_x - ex, world_y - ey)
         if dist < 0.7 and health > 0:
             if 'enemy_attack_cooldown' not in locals():
@@ -311,6 +351,15 @@ while running:
     # render mole and the correct pos
     mole_sx, mole_sy = world_to_screen(world_x, world_y, cam_x, cam_y)
     screen.blit(mole_img, (int(mole_sx), int(mole_sy)))
+    # Draw player slash animation
+    if player_slash_frame is not None:
+        if pygame.time.get_ticks() - player_slash_time > 50:
+            player_slash_frame += 1
+            player_slash_time = pygame.time.get_ticks()
+        if player_slash_frame < 6:
+            screen.blit(slash_frames[player_slash_frame], (int(mole_sx), int(mole_sy)))
+        else:
+            player_slash_frame = None
 
     key_x = 40
     key_y = height - 120
