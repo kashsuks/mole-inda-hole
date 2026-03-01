@@ -3,12 +3,25 @@ from noise import pnoise2
 import random
 import math
 import time
+import json
 
 def draw_text(surface, text, size, x, y, color=(255,255,255)):
     font = pygame.font.Font("assets/Ithaca-LVB75.ttf", size)
     text_surface = font.render(text, True, color)
     text_rect = text_surface.get_rect(center=(x, y))
     surface.blit(text_surface, text_rect)
+
+def load_unlocked_achievements(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return set(data.get("unlocked", []))
+    except Exception:
+        return set()
+
+def save_unlocked_achievements(path, unlocked):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"unlocked": sorted(unlocked)}, f)
 
 def settings_screen(screen, width, height, music_volume, sfx_volume):
     running = True
@@ -178,6 +191,21 @@ buy_prompt_text = ""
 buy_prompt_until = 0
 shoot_held = False
 
+ACHIEVEMENT_SAVE_FILE = "achievements.json"
+ACHIEVEMENT_POPUP_MS = 3500
+ACHIEVEMENT_FADE_MS = 300
+
+ACHIEVEMENTS = {
+    "first_start": "A shit show",
+    "rookie_richie": "Rookie Richie",
+    "finally_american": "Finally american",
+    "flash_guess": "I guess you're flash",
+}
+
+unlocked_achievements = load_unlocked_achievements(ACHIEVEMENT_SAVE_FILE)
+achievement_queue = []
+active_achievement = None
+
 trail = []
 trail_length = 20
 air_color = (30, 30, 30)
@@ -219,6 +247,13 @@ enemy_source_spawner = {}  # enemy_idx -> spawner_pos
 
 coin_imgs = [pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size)) for i in range(1,9)]
 coin_anim_speed = 0.15
+
+achievement_icons = {
+    "first_start": mole_img_orig,
+    "rookie_richie": coin_imgs[0],
+    "finally_american": revolver_icon,
+    "flash_guess": lightning_img,
+}
 
 max_health = 6
 health = max_health
@@ -362,6 +397,65 @@ def draw_speed_hud(surface, w, h, gt):
         surface.blit(faded, (lx, ly))
         draw_text(surface, f"{LIGHTNING_COST} coins", 16, lx + icon_size//2, ly + icon_size + 12, (150, 150, 150))
 
+def unlock_achievement(key):
+    global unlocked_achievements
+    if key in unlocked_achievements:
+        return
+    unlocked_achievements.add(key)
+    save_unlocked_achievements(ACHIEVEMENT_SAVE_FILE, unlocked_achievements)
+    achievement_queue.append({
+        "key": key,
+        "name": ACHIEVEMENTS.get(key, key),
+        "start": None,
+    })
+
+def draw_achievement_popup(surface, w):
+    global active_achievement
+    now = pygame.time.get_ticks()
+
+    if active_achievement is None and achievement_queue:
+        active_achievement = achievement_queue.pop(0)
+        active_achievement["start"] = now
+
+    if active_achievement is None:
+        return
+
+    elapsed = now - active_achievement["start"]
+    if elapsed >= ACHIEVEMENT_POPUP_MS:
+        active_achievement = None
+        return
+
+    alpha = 1.0
+    if elapsed < ACHIEVEMENT_FADE_MS:
+        alpha = elapsed / ACHIEVEMENT_FADE_MS
+    elif elapsed > ACHIEVEMENT_POPUP_MS - ACHIEVEMENT_FADE_MS:
+        alpha = (ACHIEVEMENT_POPUP_MS - elapsed) / ACHIEVEMENT_FADE_MS
+    alpha = max(0.0, min(1.0, alpha))
+
+    box_w, box_h = 360, 86
+    x, y = w - box_w - 20, 20
+    panel = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, int(215 * alpha)))
+    border_col = (int(180 * alpha), int(180 * alpha), int(180 * alpha), int(255 * alpha))
+    pygame.draw.rect(panel, border_col, panel.get_rect(), 2)
+
+    icon = achievement_icons.get(active_achievement["key"], coin_imgs[0])
+    icon_size = 48
+    icon_surface = pygame.transform.scale(icon, (icon_size, icon_size)).copy()
+    icon_surface.set_alpha(int(255 * alpha))
+    panel.blit(icon_surface, (14, (box_h - icon_size) // 2))
+
+    head_font = pygame.font.Font("assets/Ithaca-LVB75.ttf", 22)
+    name_font = pygame.font.Font("assets/Ithaca-LVB75.ttf", 28)
+    head = head_font.render("Achievement get!", True, (244, 212, 94))
+    name = name_font.render(active_achievement["name"], True, (255, 255, 255))
+    head.set_alpha(int(255 * alpha))
+    name.set_alpha(int(255 * alpha))
+    panel.blit(head, (78, 16))
+    panel.blit(name, (78, 44))
+
+    surface.blit(panel, (x, y))
+
 # NEW: Count enemies from a specific spawner
 def count_enemies_from_spawner(spawner_pos):
     count = 0
@@ -393,6 +487,7 @@ if choice == 'play':
     pygame.mixer.music.load("assets/main.flac")
     pygame.mixer.music.set_volume(music_volume)
     pygame.mixer.music.play(-1)
+    unlock_achievement("first_start")
 
 coin_count = 0
 last_dir   = 'down'
@@ -423,6 +518,7 @@ while running:
                     bullets = REVOLVER_MAX_BULLETS
                     buy_prompt_text  = "Revolver unlocked!"
                     buy_prompt_until = pygame.time.get_ticks() + 2200
+                    unlock_achievement("finally_american")
                 elif not revolver_unlocked:
                     buy_prompt_text  = f"Need {REVOLVER_COST} coins to buy!"
                     buy_prompt_until = pygame.time.get_ticks() + 1200
@@ -480,6 +576,8 @@ while running:
             coin_tiles.remove(ptile)
             play_sound("assets/coin-collect.mp3")
             coin_count += 1
+            if coin_count >= 10:
+                unlock_achievement("rookie_richie")
         if ptile in medkit_tiles:
             medkit_tiles.remove(ptile)
             health = min(max_health, health + 2)
@@ -497,6 +595,7 @@ while running:
                 play_sound("assets/coin-collect.mp3")
                 buy_prompt_text = "SPEED BOOST!"
                 buy_prompt_until = pygame.time.get_ticks() + 1500
+                unlock_achievement("flash_guess")
             else:
                 buy_prompt_text = f"Need {LIGHTNING_COST} coins!"
                 buy_prompt_until = pygame.time.get_ticks() + 1000
@@ -710,6 +809,9 @@ while running:
     # ── Buy prompt flash ──────────────────────────────────────────────
     if pygame.time.get_ticks() < buy_prompt_until:
         draw_text(screen, buy_prompt_text, 28, width//2, height//2 - 60, (255, 215, 0))
+
+    # ── Achievement popup ─────────────────────────────────────────────
+    draw_achievement_popup(screen, width)
 
     # ── Game Over Effect ─────────────────────────────────────────────
     if health <= 0:
