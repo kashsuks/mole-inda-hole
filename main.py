@@ -123,17 +123,18 @@ def play_sound(path):
         pass
 
 # Load images
-fossil_img = pygame.transform.scale(pygame.image.load("assets/fossil1.png"), (cell_size, cell_size))
-rock_img   = pygame.transform.scale(pygame.image.load("assets/rock1.png"),   (cell_size, cell_size))
-medkit_img = pygame.transform.scale(pygame.image.load("assets/medkit.png"),  (cell_size, cell_size))
+fossil_img  = pygame.transform.scale(pygame.image.load("assets/fossil1.png"), (cell_size, cell_size))
+rock_img    = pygame.transform.scale(pygame.image.load("assets/rock1.png"),   (cell_size, cell_size))
+medkit_img  = pygame.transform.scale(pygame.image.load("assets/medkit.png"),  (cell_size, cell_size))
+bullet_img  = pygame.transform.scale(pygame.image.load("assets/bullet.png"),  (cell_size, cell_size))
 
 mole_img_orig = pygame.transform.scale(pygame.image.load("assets/mole.png"), (square_size, square_size))
 mole_img = mole_img_orig
 dirt_imgs = [pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size)) for i in range(1,4)]
 
 heart_size = 40
-w_heart_img   = pygame.transform.scale(pygame.image.load("assets/heart-full.png"),  (heart_size, heart_size))
-half_heart_img = pygame.transform.scale(pygame.image.load("assets/heart-half.png"), (heart_size, heart_size))
+w_heart_img    = pygame.transform.scale(pygame.image.load("assets/heart-full.png"),  (heart_size, heart_size))
+half_heart_img = pygame.transform.scale(pygame.image.load("assets/heart-half.png"),  (heart_size, heart_size))
 empty_heart_img = pygame.transform.scale(pygame.image.load("assets/heart-empty.png"), (heart_size, heart_size))
 
 key_size = 48
@@ -172,7 +173,7 @@ active_bullets = []   # each: [wx, wy, dx, dy, dist_traveled]
 glow_t = 0.0
 buy_prompt_text = ""
 buy_prompt_until = 0
-shoot_held = False   # prevent holding space from firing every frame
+shoot_held = False
 
 trail = []
 trail_length = 20
@@ -181,9 +182,10 @@ fossil_chance = 0.07
 rock_chance   = 0.10
 seed = random.randint(0, 10000)
 
-map_grid   = {}
+map_grid    = {}
 coin_tiles  = set()
 medkit_tiles = set()
+bullet_tiles = set()
 coin_spawn_chance = 0.03
 
 def generate_tile(row, col):
@@ -198,6 +200,9 @@ def generate_tile(row, col):
                 coin_tiles.add((row, col))
             if random.random() < 0.01:
                 medkit_tiles.add((row, col))
+            if random.random() < 0.01:
+                if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
+                    bullet_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
     else:
         r = random.random()
@@ -206,6 +211,9 @@ def generate_tile(row, col):
                 coin_tiles.add((row, col))
             if random.random() < 0.01:
                 medkit_tiles.add((row, col))
+            if random.random() < 0.01:
+                if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
+                    bullet_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
@@ -225,24 +233,19 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
 
     if not unlocked:
         if coin_count >= REVOLVER_COST:
-            # Glowing — draw icon normally with gold pulse overlay
             surface.blit(revolver_icon, (ix, iy))
             pulse = int(60 + 50 * math.sin(gt * 4))
             glow_surf = pygame.Surface((REVOLVER_ICON_SIZE, REVOLVER_ICON_SIZE), pygame.SRCALPHA)
             glow_surf.fill((255, 215, 0, pulse))
             surface.blit(glow_surf, (ix, iy))
-            # Gold border
             glow_col = (255, int(180 + 75 * math.sin(gt * 4)), 0)
             pygame.draw.rect(surface, glow_col, (ix-3, iy-3, REVOLVER_ICON_SIZE+6, REVOLVER_ICON_SIZE+6), 3)
-            # Prompt
             draw_text(surface, f"[E]  Buy  {REVOLVER_COST} coins", 19,
                       ix + REVOLVER_ICON_SIZE//2, iy - 16, (255, 215, 0))
         else:
-            # Faded icon
             faded = revolver_icon.copy()
             faded.set_alpha(55)
             surface.blit(faded, (ix, iy))
-            # Progress bar
             progress = coin_count / REVOLVER_COST
             bar_w = REVOLVER_ICON_SIZE
             pygame.draw.rect(surface, (70,70,70),  (ix, iy+REVOLVER_ICON_SIZE+4, bar_w, 6))
@@ -250,11 +253,9 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
             draw_text(surface, f"{coin_count}/{REVOLVER_COST}", 17,
                       ix + REVOLVER_ICON_SIZE//2, iy+REVOLVER_ICON_SIZE+18, (150,150,150))
     else:
-        # Unlocked
         if equipped:
             pygame.draw.rect(surface, (255,100,50), (ix-3, iy-3, REVOLVER_ICON_SIZE+6, REVOLVER_ICON_SIZE+6), 3)
         surface.blit(revolver_icon, (ix, iy))
-        # Bullet pips — two rows of 6
         pip_r = 5
         pip_gap = 14
         for b in range(REVOLVER_MAX_BULLETS):
@@ -380,6 +381,11 @@ while running:
         if ptile in medkit_tiles:
             medkit_tiles.remove(ptile)
             health = min(max_health, health + 2)
+        if ptile in bullet_tiles:
+            bullet_tiles.remove(ptile)
+            if revolver_unlocked:
+                bullets = REVOLVER_MAX_BULLETS
+                play_sound("assets/coin-collect.mp3")
 
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
@@ -439,6 +445,8 @@ while running:
                 screen.blit(coin_imgs[coin_frame], (ipx, ipy))
             if (row, col) in medkit_tiles:
                 screen.blit(medkit_img, (ipx, ipy))
+            if (row, col) in bullet_tiles:
+                screen.blit(bullet_img, (ipx, ipy))
 
     # ── Draw bullets ──────────────────────────────────────────────────
     for b in active_bullets:
