@@ -113,7 +113,6 @@ clock = pygame.time.Clock()
 
 world_x, world_y = float(cols // 2), float(rows // 2)
 
-# Volume defaults — must be initialized before start_screen is called
 music_volume = 0.5
 sfx_volume = 0.5
 
@@ -242,8 +241,16 @@ enemy_attack_cooldown = 0
 # Slash animation state (outside loop so they persist between frames)
 player_slash_frame = None
 player_slash_time = 0
+player_slash_hit_this_swing = set()  # enemies already hit this swing — no double-hits
 enemy_slash_frames = [None for _ in range(num_enemies)]
 enemy_slash_times = [0 for _ in range(num_enemies)]
+
+# --- Hitbox tuning (in world-cell units) ---
+# Increase PLAYER_SLASH_REACH to make hitting enemies easier.
+# 1.0 = exactly one tile away, 1.5 = generous leeway, 2.0 = very wide.
+PLAYER_SLASH_REACH = 1.5
+# Enemy melee reach — how close they need to be before damaging the player.
+ENEMY_ATTACK_REACH = 1.2
 
 choice, music_volume, sfx_volume = start_screen(screen, width, height, music_volume, sfx_volume)
 if choice == 'play':
@@ -272,9 +279,11 @@ while running:
 
     keys = pygame.key.get_pressed()
 
+    # Start a new player swing
     if keys[pygame.K_SPACE] and player_slash_frame is None:
         player_slash_frame = 0
         player_slash_time = pygame.time.get_ticks()
+        player_slash_hit_this_swing = set()
 
     dx, dy = 0.0, 0.0
     dir_now = None
@@ -366,6 +375,7 @@ while running:
         ddx = world_x - ex
         ddy = world_y - ey
         dist = math.hypot(ddx, ddy)
+
         if dist > 0.1:
             move_x = enemy_speed * ddx / dist
             move_y = enemy_speed * ddy / dist
@@ -375,7 +385,7 @@ while running:
                 enemy_positions[i][0] = next_ex
                 enemy_positions[i][1] = next_ey
 
-        if dist < 0.7 and health > 0:
+        if dist < ENEMY_ATTACK_REACH and health > 0:
             if pygame.time.get_ticks() > enemy_attack_cooldown:
                 health -= 1
                 enemy_attack_cooldown = pygame.time.get_ticks() + 1000
@@ -384,6 +394,19 @@ while running:
                 shake_time = pygame.time.get_ticks() + 200
                 shake_intensity = 0.15
                 play_sound("assets/hurt.mp3")
+
+        # Player slash hits enemy — radius-based, once per swing per enemy
+        if (player_slash_frame is not None
+                and player_slash_frame < 6
+                and i not in player_slash_hit_this_swing
+                and dist < PLAYER_SLASH_REACH):
+            player_slash_hit_this_swing.add(i)
+            # Knock the enemy back
+            if dist > 0:
+                knockback = 2.0
+                enemy_positions[i][0] += (ex - world_x) / dist * knockback
+                enemy_positions[i][1] += (ey - world_y) / dist * knockback
+            play_sound("assets/hurt.mp3")
 
     # Draw enemies
     for i in range(num_enemies):
