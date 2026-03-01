@@ -56,7 +56,7 @@ def settings_screen(screen, width, height, music_volume, sfx_volume):
                     music_volume = (music_knob_x - slider_rect_music.x) / slider_rect_music.width
                     pygame.mixer.music.set_volume(music_volume)
                 if dragging_sfx:
-                    sfx_knob_x = max(slider_rect_sfx.x, min(mx, sfx_rect_sfx.x+slider_rect_sfx.width))
+                    sfx_knob_x = max(slider_rect_sfx.x, min(mx, slider_rect_sfx.x+slider_rect_sfx.width))
                     sfx_volume = (sfx_knob_x - slider_rect_sfx.x) / slider_rect_sfx.width
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -127,8 +127,9 @@ fossil_img  = pygame.transform.scale(pygame.image.load("assets/fossil1.png"), (c
 rock_img    = pygame.transform.scale(pygame.image.load("assets/rock1.png"),   (cell_size, cell_size))
 medkit_img  = pygame.transform.scale(pygame.image.load("assets/medkit.png"),  (cell_size, cell_size))
 bullet_img  = pygame.transform.scale(pygame.image.load("assets/bullet.png"),  (cell_size, cell_size))
-# NEW: Lightning speed powerup image
 lightning_img = pygame.transform.scale(pygame.image.load("assets/lightning.png"), (cell_size, cell_size))
+# NEW: Spawner image
+spawner_img = pygame.transform.scale(pygame.image.load("assets/spawner.png"), (cell_size, cell_size))
 
 mole_img_orig = pygame.transform.scale(pygame.image.load("assets/mole.png"), (square_size, square_size))
 mole_img = mole_img_orig
@@ -188,17 +189,51 @@ map_grid    = {}
 coin_tiles  = set()
 medkit_tiles = set()
 bullet_tiles = set()
-# NEW: Lightning speed powerup tiles
 lightning_tiles = set()
+# NEW: Spawner tiles set
+spawner_tiles = set()
 coin_spawn_chance = 0.03
+
+# NEW: Spawner settings
+SPAWNER_SPAWN_CHANCE = 0.008  # Chance per valid tile
+SPAWNER_MIN_DISTANCE_FROM_PLAYER = 15  # Don't spawn too close to player
+ENEMY_SPAWN_INTERVAL = 3000  # Spawn enemy every 3 seconds from each spawner
+MAX_ENEMIES_PER_SPAWNER = 3  # Max enemies per spawner at once
 
 # NEW: Speed powerup settings
 LIGHTNING_COST = 10
 BASE_SPEED = 5
 speed_boost_active = False
-speed_boost_multiplier = 2.0  # 2x speed when collected
+speed_boost_multiplier = 2.0
 speed_boost_end_time = 0
-SPEED_BOOST_DURATION = 5000  # 5 seconds in milliseconds
+SPEED_BOOST_DURATION = 5000
+
+# NEW: Enemy management (no longer fixed positions)
+enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
+enemy_speed = 2.5 / cell_size
+enemy_positions = []  # Now dynamic list
+enemy_spawn_timers = {}  # spawner_pos -> last_spawn_time
+
+# Track which spawner spawned which enemy
+enemy_source_spawner = {}  # enemy_idx -> spawner_pos
+
+coin_imgs = [pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size)) for i in range(1,9)]
+coin_anim_speed = 0.15
+
+max_health = 6
+health = max_health
+shake_time = 0
+shake_intensity = 0
+enemy_attack_cooldown = 0
+
+player_slash_frame = None
+player_slash_time  = 0
+player_slash_hit_this_swing = set()
+enemy_slash_frames = []
+enemy_slash_times  = []
+
+PLAYER_SLASH_REACH = 1.5
+ENEMY_ATTACK_REACH = 1.2
 
 def generate_tile(row, col):
     n = pnoise2(col * 0.15 + seed, row * 0.15 + seed)
@@ -215,10 +250,20 @@ def generate_tile(row, col):
             if random.random() < 0.01:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
                     bullet_tiles.add((row, col))
-            # NEW: Chance to spawn lightning speed powerup
             if random.random() < 0.005:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles and (row, col) not in bullet_tiles:
                     lightning_tiles.add((row, col))
+            # NEW: Spawner spawn logic - avoid all other items
+            if random.random() < SPAWNER_SPAWN_CHANCE:
+                if ((row, col) not in coin_tiles and 
+                    (row, col) not in medkit_tiles and 
+                    (row, col) not in bullet_tiles and
+                    (row, col) not in lightning_tiles):
+                    # Check distance from player
+                    dist_from_player = math.hypot(col - world_x, row - world_y)
+                    if dist_from_player >= SPAWNER_MIN_DISTANCE_FROM_PLAYER:
+                        spawner_tiles.add((row, col))
+                        enemy_spawn_timers[(row, col)] = 0
             return f'dirt{random.randint(1,3)}'
     else:
         r = random.random()
@@ -230,10 +275,19 @@ def generate_tile(row, col):
             if random.random() < 0.01:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
                     bullet_tiles.add((row, col))
-            # NEW: Chance to spawn lightning speed powerup
             if random.random() < 0.005:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles and (row, col) not in bullet_tiles:
                     lightning_tiles.add((row, col))
+            # NEW: Spawner spawn logic in secondary area
+            if random.random() < SPAWNER_SPAWN_CHANCE:
+                if ((row, col) not in coin_tiles and 
+                    (row, col) not in medkit_tiles and 
+                    (row, col) not in bullet_tiles and
+                    (row, col) not in lightning_tiles):
+                    dist_from_player = math.hypot(col - world_x, row - world_y)
+                    if dist_from_player >= SPAWNER_MIN_DISTANCE_FROM_PLAYER:
+                        spawner_tiles.add((row, col))
+                        enemy_spawn_timers[(row, col)] = 0
             return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
@@ -247,11 +301,9 @@ def ensure_map_area(top, left, bottom, right):
 def world_to_screen(wx, wy, cam_x, cam_y):
     return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
 
-# UPDATED: Revolver HUD now centered at bottom with padding
 def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
-    # Center bottom with 20px padding from bottom
     ix = w // 2 - REVOLVER_ICON_SIZE // 2
-    iy = h - REVOLVER_ICON_SIZE - 20  # 20px padding from bottom
+    iy = h - REVOLVER_ICON_SIZE - 20
 
     if not unlocked:
         if coin_count >= REVOLVER_COST:
@@ -280,7 +332,7 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
         surface.blit(revolver_icon, (ix, iy))
         pip_r = 5
         pip_gap = 14
-        start_x = ix + (REVOLVER_ICON_SIZE - (6 * pip_gap)) // 2  # Center bullets under icon
+        start_x = ix + (REVOLVER_ICON_SIZE - (6 * pip_gap)) // 2
         for b in range(REVOLVER_MAX_BULLETS):
             row_n = b // 6
             col_n = b % 6
@@ -291,53 +343,50 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
         hint = "[1] equipped" if equipped else "[1] equip"
         draw_text(surface, hint, 17, ix + REVOLVER_ICON_SIZE//2, iy+REVOLVER_ICON_SIZE+35, (190,190,190))
 
-# NEW: Draw speed boost HUD - moved to top right since revolver is now at bottom
 def draw_speed_hud(surface, w, h, gt):
-    # Draw lightning icon in top right area
     icon_size = 40
     lx = w - icon_size - 20
-    ly = 100  # Below coin counter
+    ly = 100
 
     if speed_boost_active:
-        # Pulsing glow when active
         pulse = int(100 + 100 * math.sin(gt * 8))
         glow_surf = pygame.Surface((icon_size, icon_size), pygame.SRCALPHA)
         glow_surf.fill((255, 255, 0, pulse))
         surface.blit(glow_surf, (lx, ly))
         pygame.draw.rect(surface, (255, 255, 0), (lx-2, ly-2, icon_size+4, icon_size+4), 2)
-        # Show remaining time
         remaining = max(0, (speed_boost_end_time - pygame.time.get_ticks()) / 1000)
         draw_text(surface, f"SPEED! {remaining:.1f}s", 20, lx + icon_size//2, ly + icon_size + 15, (255, 255, 0))
     else:
-        # Dim when not active
         faded = lightning_img.copy()
         faded.set_alpha(80)
         surface.blit(faded, (lx, ly))
         draw_text(surface, f"{LIGHTNING_COST} coins", 16, lx + icon_size//2, ly + icon_size + 12, (150, 150, 150))
 
-# Enemy setup
-enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
-num_enemies = 3
-enemy_speed = 2.5 / cell_size
-enemy_positions = [[world_x + random.randint(-10,10), world_y + random.randint(-10,10)] for _ in range(num_enemies)]
+# NEW: Count enemies from a specific spawner
+def count_enemies_from_spawner(spawner_pos):
+    count = 0
+    for idx, source in enemy_source_spawner.items():
+        if source == spawner_pos and idx < len(enemy_positions):
+            count += 1
+    return count
 
-coin_imgs = [pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size)) for i in range(1,9)]
-coin_anim_speed = 0.15
-
-max_health = 6
-health = max_health
-shake_time = 0
-shake_intensity = 0
-enemy_attack_cooldown = 0
-
-player_slash_frame = None
-player_slash_time  = 0
-player_slash_hit_this_swing = set()
-enemy_slash_frames = [None] * num_enemies
-enemy_slash_times  = [0]    * num_enemies
-
-PLAYER_SLASH_REACH = 1.5
-ENEMY_ATTACK_REACH = 1.2
+# NEW: Remove dead enemies and clean up tracking
+def remove_enemy(idx):
+    if idx < len(enemy_positions):
+        enemy_positions.pop(idx)
+        if idx < len(enemy_slash_frames):
+            enemy_slash_frames.pop(idx)
+        if idx < len(enemy_slash_times):
+            enemy_slash_times.pop(idx)
+        # Update source tracking indices
+        new_source = {}
+        for old_idx, source in enemy_source_spawner.items():
+            if old_idx < idx:
+                new_source[old_idx] = source
+            elif old_idx > idx:
+                new_source[old_idx - 1] = source
+        enemy_source_spawner.clear()
+        enemy_source_spawner.update(new_source)
 
 choice, music_volume, sfx_volume = start_screen(screen, width, height, music_volume, sfx_volume)
 if choice == 'play':
@@ -405,7 +454,6 @@ while running:
         play_sound("assets/shoot.mp3")
 
     # ── Movement ─────────────────────────────────────────────────────
-    # NEW: Apply speed boost multiplier if active
     current_speed = speed * (speed_boost_multiplier if speed_boost_active else 1.0)
 
     dx, dy = 0.0, 0.0
@@ -440,14 +488,13 @@ while running:
             if revolver_unlocked:
                 bullets = REVOLVER_MAX_BULLETS
                 play_sound("assets/coin-collect.mp3")
-        # NEW: Collect lightning speed powerup
         if ptile in lightning_tiles:
             if coin_count >= LIGHTNING_COST:
                 lightning_tiles.remove(ptile)
                 coin_count -= LIGHTNING_COST
                 speed_boost_active = True
                 speed_boost_end_time = pygame.time.get_ticks() + SPEED_BOOST_DURATION
-                play_sound("assets/coin-collect.mp3")  # You might want a different sound
+                play_sound("assets/coin-collect.mp3")
                 buy_prompt_text = "SPEED BOOST!"
                 buy_prompt_until = pygame.time.get_ticks() + 1500
             else:
@@ -472,6 +519,25 @@ while running:
 
     coin_frame = int((pygame.time.get_ticks() / 1000 / coin_anim_speed) % len(coin_imgs))
 
+    # ── NEW: Enemy Spawner Logic ─────────────────────────────────────
+    current_time = pygame.time.get_ticks()
+    for spawner_pos in list(spawner_tiles):
+        last_spawn = enemy_spawn_timers.get(spawner_pos, 0)
+        if current_time - last_spawn > ENEMY_SPAWN_INTERVAL:
+            # Count current enemies from this spawner
+            current_count = count_enemies_from_spawner(spawner_pos)
+            if current_count < MAX_ENEMIES_PER_SPAWNER:
+                # Spawn new enemy
+                spawn_col, spawn_row = spawner_pos[1], spawner_pos[0]
+                # Spawn nearby but not on top of spawner
+                offset_x = random.choice([-1, 1]) * random.uniform(1, 2)
+                offset_y = random.choice([-1, 1]) * random.uniform(1, 2)
+                enemy_positions.append([spawn_col + offset_x, spawn_row + offset_y])
+                enemy_slash_frames.append(None)
+                enemy_slash_times.append(0)
+                enemy_source_spawner[len(enemy_positions) - 1] = spawner_pos
+                enemy_spawn_timers[spawner_pos] = current_time
+
     # ── Move bullets ─────────────────────────────────────────────────
     dead_bullets = []
     for bi, b in enumerate(active_bullets):
@@ -481,7 +547,7 @@ while running:
         if b[4] > BULLET_RANGE or map_grid.get((int(b[1]), int(b[0])), 'air') == 'rock':
             dead_bullets.append(bi)
             continue
-        for i in range(num_enemies):
+        for i in range(len(enemy_positions)):
             ex, ey = enemy_positions[i]
             if math.hypot(b[0]-ex, b[1]-ey) < BULLET_RADIUS:
                 d = math.hypot(ex-b[0], ey-b[1]) or 0.001
@@ -514,12 +580,16 @@ while running:
                 screen.blit(medkit_img, (ipx, ipy))
             if (row, col) in bullet_tiles:
                 screen.blit(bullet_img, (ipx, ipy))
-            # NEW: Draw lightning powerup
             if (row, col) in lightning_tiles:
                 screen.blit(lightning_img, (ipx, ipy))
-                # Draw cost indicator above lightning
                 cost_text = f"{LIGHTNING_COST}"
                 draw_text(screen, cost_text, 14, ipx + cell_size//2, ipy - 8, (255, 255, 0))
+            # NEW: Draw spawners
+            if (row, col) in spawner_tiles:
+                screen.blit(spawner_img, (ipx, ipy))
+                # Optional: show spawn indicator
+                pulse = int(100 + 100 * math.sin(glow_t * 3))
+                pygame.draw.circle(screen, (255, 0, 0, pulse), (ipx + cell_size//2, ipy + cell_size//2), 5)
 
     # ── Draw bullets ──────────────────────────────────────────────────
     for b in active_bullets:
@@ -528,7 +598,8 @@ while running:
         pygame.draw.circle(screen, (200, 150,  20), (int(bsx), int(bsy)), BULLET_SIZE_PX - 2)
 
     # ── Enemy AI + damage ─────────────────────────────────────────────
-    for i in range(num_enemies):
+    dead_enemies = []
+    for i in range(len(enemy_positions)):
         ex, ey = enemy_positions[i]
         ddx = world_x - ex
         ddy = world_y - ey
@@ -546,6 +617,10 @@ while running:
             if pygame.time.get_ticks() > enemy_attack_cooldown:
                 health -= 1
                 enemy_attack_cooldown = pygame.time.get_ticks() + 1000
+                # Ensure slash arrays are long enough
+                while len(enemy_slash_frames) <= i:
+                    enemy_slash_frames.append(None)
+                    enemy_slash_times.append(0)
                 enemy_slash_frames[i] = 0
                 enemy_slash_times[i]  = pygame.time.get_ticks()
                 shake_time = pygame.time.get_ticks() + 200
@@ -563,10 +638,14 @@ while running:
             play_sound("assets/hurt.mp3")
 
     # ── Draw enemies ──────────────────────────────────────────────────
-    for i in range(num_enemies):
+    for i in range(len(enemy_positions)):
         ex, ey = enemy_positions[i]
         esx, esy = world_to_screen(ex, ey, cam_x, cam_y)
         screen.blit(enemy_img, (int(esx), int(esy)))
+        # Ensure slash arrays are long enough
+        while len(enemy_slash_frames) <= i:
+            enemy_slash_frames.append(None)
+            enemy_slash_times.append(0)
         if enemy_slash_frames[i] is not None:
             if pygame.time.get_ticks() - enemy_slash_times[i] > 50:
                 enemy_slash_frames[i] += 1
@@ -634,18 +713,14 @@ while running:
 
     # ── Game Over Effect ─────────────────────────────────────────────
     if health <= 0:
-        # Fade out
         fade = pygame.Surface((width, height), pygame.SRCALPHA)
         fade.fill((80, 80, 80, 200))
         screen.blit(fade, (0, 0))
-        # Fish eye effect
         surf = pygame.transform.smoothscale(screen, (width//2, height//2))
         surf = pygame.transform.smoothscale(surf, (width, height))
         screen.blit(surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-        # Wasted text
         draw_text(screen, "WASTED", 96, width//2, height//2, (220, 0, 40))
         pygame.display.flip()
-        # Pause for dramatic effect
         pygame.time.wait(2200)
         running = False
     else:
