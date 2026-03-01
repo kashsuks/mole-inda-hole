@@ -2,6 +2,7 @@ import pygame
 from noise import pnoise2
 import random
 import math
+import time
 
 def draw_text(surface, text, size, x, y, color=(255,255,255)):
     font = pygame.font.Font("assets/Ithaca-LVB75.ttf", size)
@@ -12,7 +13,7 @@ def draw_text(surface, text, size, x, y, color=(255,255,255)):
 def start_screen(screen, width, height):
     play_rect = pygame.Rect(width//2-100, height//2-40, 200, 50)
     settings_rect = pygame.Rect(width//2-100, height//2+30, 200, 50)
-    
+
     pygame.mixer.music.load("assets/loading.flac")
     pygame.mixer.music.play(-1)
     while True:
@@ -40,7 +41,6 @@ def start_screen(screen, width, height):
 pygame.init()
 pygame.mixer.init()
 
-
 width, height = 800, 600
 cell_size = 40
 screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
@@ -51,17 +51,19 @@ pygame.display.set_caption('Mole in da hole')
 
 running = True
 square_size = 40
-speed = 5  # fast mole like original
+speed = 5
 clock = pygame.time.Clock()
 
 world_x, world_y = float(cols // 2), float(rows // 2)
 
+# Load images
 fossil_img = pygame.image.load("assets/fossil1.png")
 fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
 rock_img = pygame.image.load("assets/rock1.png")
 rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
+medkit_img = pygame.image.load("assets/medkit.png")
+medkit_img = pygame.transform.scale(medkit_img, (cell_size, cell_size))
 
-# load dirt
 mole_img_orig = pygame.image.load("assets/mole.png")
 mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
 mole_img = mole_img_orig
@@ -78,6 +80,7 @@ heart_size = 40
 w_heart_img = pygame.transform.scale(w_heart_img, (heart_size, heart_size))
 half_heart_img = pygame.transform.scale(half_heart_img, (heart_size, heart_size))
 empty_heart_img = pygame.transform.scale(empty_heart_img, (heart_size, heart_size))
+
 w_key_img = pygame.image.load("assets/w_key.png")
 a_key_img = pygame.image.load("assets/a_key.png")
 s_key_img = pygame.image.load("assets/s_key.png")
@@ -89,37 +92,31 @@ a_key_img = pygame.transform.scale(a_key_img, (key_size, key_size))
 s_key_img = pygame.transform.scale(s_key_img, (key_size, key_size))
 d_key_img = pygame.transform.scale(d_key_img, (key_size, key_size))
 
-# slash and split animatons
+# Slash animation
 slash_img = pygame.image.load("assets/Slash.png")
 slash_width, slash_height = slash_img.get_size()
 slash_frame_width = slash_width // 6
 slash_big_size = int(square_size * 4)
-slash_frames = [pygame.transform.scale(slash_img.subsurface(pygame.Rect(i * slash_frame_width, 0, slash_frame_width, slash_height)), (slash_big_size, slash_big_size)) for i in range(6)]
-mole_img_orig = pygame.image.load("assets/mole.png")
-mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
-mole_img = mole_img_orig
-dirt_imgs = [
-    pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
-    for i in range(1, 4)
+slash_frames = [
+    pygame.transform.scale(
+        slash_img.subsurface(pygame.Rect(i * slash_frame_width, 0, slash_frame_width, slash_height)),
+        (slash_big_size, slash_big_size)
+    )
+    for i in range(6)
 ]
-fossil_img = pygame.image.load("assets/fossil1.png")
-fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
-rock_img = pygame.image.load("assets/rock1.png")
-rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
 
-trail = []  # world-space float coords
+trail = []
 trail_length = 20
 
-soil_color = (160, 82, 45)
-rock_color = (100, 100, 100)
 air_color = (30, 30, 30)
-darker_soil = (110, 50, 20)
-lighter_soil = (210, 140, 80)
 fossil_chance = 0.07
 rock_chance = 0.10
 seed = random.randint(0, 10000)
 
 map_grid = {}
+coin_tiles = set()
+medkit_tiles = set()
+coin_spawn_chance = 0.03
 
 def generate_tile(row, col):
     n = pnoise2(col * 0.15 + seed, row * 0.15 + seed)
@@ -131,16 +128,16 @@ def generate_tile(row, col):
         else:
             if random.random() < coin_spawn_chance:
                 coin_tiles.add((row, col))
+            if random.random() < 0.01:
+                medkit_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
     else:
         r = random.random()
-        if r < 0.33:
+        if r < 0.66:
             if random.random() < coin_spawn_chance:
                 coin_tiles.add((row, col))
-            return f'dirt{random.randint(1,3)}'
-        elif r < 0.66:
-            if random.random() < coin_spawn_chance:
-                coin_tiles.add((row, col))
+            if random.random() < 0.01:
+                medkit_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
@@ -152,9 +149,7 @@ def ensure_map_area(top, left, bottom, right):
                 map_grid[(row, col)] = generate_tile(row, col)
 
 def world_to_screen(wx, wy, cam_x, cam_y):
-    """Convert world (float cell) coords to pixel screen coords."""
     return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
-
 
 # Enemy setup
 enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
@@ -165,36 +160,39 @@ enemy_positions = [
     for _ in range(num_enemies)
 ]
 
-# Coin animation setup
-coin_imgs = [pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size)) for i in range(1, 9)]
-coin_anim_speed = 0.15  # seconds per frame
-coin_spawn_chance = 0.03
-coin_tiles = set()
+# Coin animation
+coin_imgs = [
+    pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size))
+    for i in range(1, 9)
+]
+coin_anim_speed = 0.15
 
-# start screen before game loop
-max_health = 6  # 3 hearts, each heart = 2 health
+max_health = 6
 health = max_health
 shake_time = 0
 shake_intensity = 0
+enemy_attack_cooldown = 0
+
+# Slash animation state (outside loop so they persist between frames)
+player_slash_frame = None
+player_slash_time = 0
+enemy_slash_frames = [None for _ in range(num_enemies)]
+enemy_slash_times = [0 for _ in range(num_enemies)]
 
 choice = start_screen(screen, width, height)
 if choice == 'play':
     pygame.mixer.music.load("assets/main.flac")
     pygame.mixer.music.play(-1)
 elif choice == 'settings':
-    screen.fill((30,30,30))
+    screen.fill((30, 30, 30))
     draw_text(screen, "Settings coming soon!", 40, width//2, height//2)
     pygame.display.flip()
     pygame.time.wait(1500)
 
 coin_count = 0
-last_dir = 'down'  # Track last direction for orientation
+last_dir = 'down'
+
 while running:
-    # Slash animation state
-    player_slash_frame = None
-    player_slash_time = 0
-    enemy_slash_frames = [None for _ in range(num_enemies)]
-    enemy_slash_times = [0 for _ in range(num_enemies)]
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -208,10 +206,12 @@ while running:
                 pygame.display.toggle_fullscreen()
 
     keys = pygame.key.get_pressed()
-    # Player attack (space key)
+
+    # Player attack
     if keys[pygame.K_SPACE] and player_slash_frame is None:
         player_slash_frame = 0
         player_slash_time = pygame.time.get_ticks()
+
     dx, dy = 0.0, 0.0
     dir_now = None
     if keys[pygame.K_w]:
@@ -229,7 +229,6 @@ while running:
 
     if dir_now:
         last_dir = dir_now
-
         if last_dir == 'up':
             mole_img = mole_img_orig
         elif last_dir == 'down':
@@ -247,22 +246,25 @@ while running:
         world_y = next_y
         world_x = max(-10000, min(world_x, 10000))
         world_y = max(-10000, min(world_y, 10000))
-        # check for a collected coin
         player_tile = (int(world_y), int(world_x))
         if player_tile in coin_tiles:
             coin_tiles.remove(player_tile)
             coin_sound = pygame.mixer.Sound("assets/coin-collect.mp3")
             coin_sound.play()
             coin_count += 1
+        if player_tile in medkit_tiles:
+            medkit_tiles.remove(player_tile)
+            health = min(max_health, health + 2)
+
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
-    # Apply screen shake if active
+
     if shake_time > pygame.time.get_ticks():
         cam_x += random.uniform(-shake_intensity, shake_intensity)
         cam_y += random.uniform(-shake_intensity, shake_intensity)
 
-    tile_left  = int(cam_x) - 1
-    tile_top   = int(cam_y) - 1
+    tile_left   = int(cam_x) - 1
+    tile_top    = int(cam_y) - 1
     tile_right  = tile_left + cols + 3
     tile_bottom = tile_top  + rows + 3
     ensure_map_area(tile_top, tile_left, tile_bottom, tile_right)
@@ -272,6 +274,8 @@ while running:
         trail.pop(0)
 
     coin_frame = int((pygame.time.get_ticks() / 1000 / coin_anim_speed) % len(coin_imgs))
+
+    # Draw tiles
     for row in range(tile_top, tile_bottom):
         for col in range(tile_left, tile_right):
             tile = map_grid[(row, col)]
@@ -288,43 +292,42 @@ while running:
                 screen.blit(rock_img, (ipx, ipy))
             elif tile == 'air':
                 pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
-            # Draw coin if present
             if (row, col) in coin_tiles:
                 screen.blit(coin_imgs[coin_frame], (ipx, ipy))
+            if (row, col) in medkit_tiles:
+                screen.blit(medkit_img, (ipx, ipy))
 
-    # enemy ai
-    for i, (ex, ey) in enumerate(enemy_positions):
-        dx = world_x - ex
-        dy = world_y - ey
-        dist = math.hypot(dx, dy)
+    # Enemy AI + damage (single loop, no duplication)
+    for i in range(num_enemies):
+        ex, ey = enemy_positions[i]
+        ddx = world_x - ex
+        ddy = world_y - ey
+        dist = math.hypot(ddx, ddy)
         if dist > 0.1:
-            move_x = enemy_speed * dx / dist
-            move_y = enemy_speed * dy / dist
+            move_x = enemy_speed * ddx / dist
+            move_y = enemy_speed * ddy / dist
             next_ex = ex + move_x
             next_ey = ey + move_y
-            # dont move into the rocks
             if map_grid.get((int(next_ey), int(next_ex)), None) != 'rock':
                 enemy_positions[i][0] = next_ex
                 enemy_positions[i][1] = next_ey
 
-        # enemy attack stuff
-        dist = math.hypot(world_x - ex, world_y - ey)
         if dist < 0.7 and health > 0:
-            if 'enemy_attack_cooldown' not in locals():
-                enemy_attack_cooldown = 0
             if pygame.time.get_ticks() > enemy_attack_cooldown:
                 health -= 1
-                enemy_attack_cooldown = pygame.time.get_ticks() + 1000  # 1 second cooldown
+                enemy_attack_cooldown = pygame.time.get_ticks() + 1000
                 enemy_slash_frames[i] = 0
                 enemy_slash_times[i] = pygame.time.get_ticks()
-                shake_time = pygame.time.get_ticks() + 200  # shake for 200ms
+                shake_time = pygame.time.get_ticks() + 200
                 shake_intensity = 0.15
+                pygame.mixer.Sound("assets/hurt.mp3").play()
 
-    for ex, ey in enemy_positions:
+    # Draw enemies
+    for i in range(num_enemies):
+        ex, ey = enemy_positions[i]
         esx, esy = world_to_screen(ex, ey, cam_x, cam_y)
         screen.blit(enemy_img, (int(esx), int(esy)))
         if enemy_slash_frames[i] is not None:
-            frame = enemy_slash_frames[i]
             if pygame.time.get_ticks() - enemy_slash_times[i] > 50:
                 enemy_slash_frames[i] += 1
                 enemy_slash_times[i] = pygame.time.get_ticks()
@@ -332,15 +335,8 @@ while running:
                 screen.blit(slash_frames[enemy_slash_frames[i]], (int(esx), int(esy)))
             else:
                 enemy_slash_frames[i] = None
-        dist = math.hypot(world_x - ex, world_y - ey)
-        if dist < 0.7 and health > 0:
-            if 'enemy_attack_cooldown' not in locals():
-                enemy_attack_cooldown = 0
-            if pygame.time.get_ticks() > enemy_attack_cooldown:
-                health -= 1
-                enemy_attack_cooldown = pygame.time.get_ticks() + 1000  # 1 second cooldown
 
-    # draw the trail
+    # Draw trail
     for i, (tx, ty) in enumerate(trail):
         alpha = int(255 * (i + 1) / trail_length)
         spx, spy = world_to_screen(tx, ty, cam_x, cam_y)
@@ -348,9 +344,10 @@ while running:
         soil.fill((139, 69, 19, alpha))
         screen.blit(soil, (int(spx), int(spy)))
 
-    # render mole and the correct pos
+    # Draw mole
     mole_sx, mole_sy = world_to_screen(world_x, world_y, cam_x, cam_y)
     screen.blit(mole_img, (int(mole_sx), int(mole_sy)))
+
     # Draw player slash animation
     if player_slash_frame is not None:
         if pygame.time.get_ticks() - player_slash_time > 50:
@@ -361,38 +358,23 @@ while running:
         else:
             player_slash_frame = None
 
+    # Draw WASD key hints
     key_x = 40
     key_y = height - 120
-    if keys[pygame.K_w]:
-        w_alpha = 255
-    else:
-        w_alpha = 100
-    w_img = w_key_img.copy()
-    w_img.set_alpha(w_alpha)
-    screen.blit(w_img, (key_x + key_size, key_y))
-    if keys[pygame.K_a]:
-        a_alpha = 255
-    else:
-        a_alpha = 100
-    a_img = a_key_img.copy()
-    a_img.set_alpha(a_alpha)
-    screen.blit(a_img, (key_x, key_y + key_size))
-    if keys[pygame.K_s]:
-        s_alpha = 255
-    else:
-        s_alpha = 100
-    s_img = s_key_img.copy()
-    s_img.set_alpha(s_alpha)
-    screen.blit(s_img, (key_x + key_size, key_y + key_size))
-    if keys[pygame.K_d]:
-        d_alpha = 255
-    else:
-        d_alpha = 100
-    d_img = d_key_img.copy()
-    d_img.set_alpha(d_alpha)
-    screen.blit(d_img, (key_x + 2 * key_size, key_y + key_size))
+    for key_const, img, ox, oy in [
+        (pygame.K_w, w_key_img, key_size, 0),
+        (pygame.K_a, a_key_img, 0, key_size),
+        (pygame.K_s, s_key_img, key_size, key_size),
+        (pygame.K_d, d_key_img, key_size * 2, key_size),
+    ]:
+        img_copy = img.copy()
+        img_copy.set_alpha(255 if keys[key_const] else 100)
+        screen.blit(img_copy, (key_x + ox, key_y + oy))
 
+    # Draw coin counter
     draw_text(screen, f"Coins: {coin_count}", 32, width - 100, 40, (255, 223, 0))
+
+    # Draw hearts
     heart_x = 40
     heart_y = 40
     h = health
@@ -404,5 +386,8 @@ while running:
         else:
             screen.blit(empty_heart_img, (heart_x + i * (heart_size + 8), heart_y))
         h -= 2
+
     pygame.display.flip()
     clock.tick(60)
+
+pygame.quit()
