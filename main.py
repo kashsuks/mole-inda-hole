@@ -556,7 +556,24 @@ while running:
     if pygame.time.get_ticks() < buy_prompt_until:
         draw_text(screen, buy_prompt_text, 28, width//2, height//2 - 60, (255, 215, 0))
 
-    pygame.display.flip()
-    dt = clock.tick(60) / 1000.0
+    # ── Game Over Effect ─────────────────────────────────────────────
+    if health <= 0:
+        # Fade out
+        fade = pygame.Surface((width, height), pygame.SRCALPHA)
+        fade.fill((80, 80, 80, 200))
+        screen.blit(fade, (0, 0))
+        # Fish eye effect
+        surf = pygame.transform.smoothscale(screen, (width//2, height//2))
+        surf = pygame.transform.smoothscale(surf, (width, height))
+        screen.blit(surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        # Wasted text
+        draw_text(screen, "WASTED", 96, width//2, height//2, (220, 0, 40))
+        pygame.display.flip()
+        # Pause for dramatic effect
+        pygame.time.wait(2200)
+        running = False
+    else:
+        pygame.display.flip()
+        dt = clock.tick(60) / 1000.0
 
 pygame.quit()
