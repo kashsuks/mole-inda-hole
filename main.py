@@ -672,7 +672,7 @@ while running:
             bullet_tiles.remove(ptile)
             if revolver_unlocked:
                 bullets = REVOLVER_MAX_BULLETS
-                play_sound("assets/coin-collect.mp3")
+                play_sound("assets/eagle.mp3")
         if ptile in lightning_tiles:
             if coin_count >= LIGHTNING_COST:
                 lightning_tiles.remove(ptile)
