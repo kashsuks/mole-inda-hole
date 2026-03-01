@@ -4,7 +4,7 @@ import random
 import math
 
 def draw_text(surface, text, size, x, y, color=(255,255,255)):
-    font = pygame.font.SysFont(None, size)
+    font = pygame.font.Font("assets/Ithaca-LVB75.ttf", size)
     text_surface = font.render(text, True, color)
     text_rect = text_surface.get_rect(center=(x, y))
     surface.blit(text_surface, text_rect)
@@ -154,6 +154,7 @@ elif choice == 'settings':
     pygame.display.flip()
     pygame.time.wait(1500)
 
+coin_count = 0
 last_dir = 'down'  # Track last direction for orientation
 while running:
     for event in pygame.event.get():
@@ -204,7 +205,13 @@ while running:
         world_y = next_y
         world_x = max(-10000, min(world_x, 10000))
         world_y = max(-10000, min(world_y, 10000))
-
+        # check for a collected coin
+        player_tile = (int(world_y), int(world_x))
+        if player_tile in coin_tiles:
+            coin_tiles.remove(player_tile)
+            coin_sound = pygame.mixer.Sound("assets/coin-collect.mp3")
+            coin_sound.play()
+            coin_count += 1
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
 
@@ -270,5 +277,7 @@ while running:
     mole_sx, mole_sy = world_to_screen(world_x, world_y, cam_x, cam_y)
     screen.blit(mole_img, (int(mole_sx), int(mole_sy)))
 
+    # Draw coin counter in top right
+    draw_text(screen, f"Coins: {coin_count}", 32, width - 100, 40, (255, 223, 0))
     pygame.display.flip()
     clock.tick(60)
