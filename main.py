@@ -231,6 +231,19 @@ SPAWNER_MIN_DISTANCE_FROM_PLAYER = 8  # Keep enough distance, but still allow sp
 ENEMY_SPAWN_INTERVAL = 3000  # Spawn enemy every 3 seconds from each spawner
 MAX_ENEMIES_PER_SPAWNER = 3  # Max enemies per spawner at once
 
+BOSS_REQUIRED_COINS = 100
+BOSS_REQUIRED_KILLS = 30
+BOSS_MAX_HEALTH = 80
+BOSS_MOVE_SPEED = 1.4 / cell_size
+BOSS_ATTACK_REACH = 1.9
+BOSS_HIT_RADIUS = 1.5
+BOSS_SLASH_REACH = 2.2
+BOSS_MELEE_DAMAGE = 2
+BOSS_RANGED_DAMAGE = 2
+BOSS_INTRO_RUMBLE1_MS = 1700
+BOSS_INTRO_DIALOGUE_MS = 1800
+BOSS_INTRO_RUMBLE2_MS = 1700
+
 # NEW: Speed powerup settings
 LIGHTNING_COST = 10
 BASE_SPEED = 5
@@ -241,10 +254,20 @@ SPEED_BOOST_DURATION = 5000
 
 # NEW: Enemy management (no longer fixed positions)
 enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
+boss_size = int(square_size * 3.2)
+boss_img = pygame.transform.scale(mole_img_orig, (boss_size, boss_size))
 enemy_speed = 2.5 / cell_size
 enemy_positions = []  # Now dynamic list
 enemy_spawn_timers = {}  # spawner_pos -> last_spawn_time
 enemy_health = []
+boss_spawned = False
+boss_defeated = False
+boss_x, boss_y = 0.0, 0.0
+boss_health = BOSS_MAX_HEALTH
+boss_attack_cooldown = 0
+boss_intro_active = False
+boss_intro_phase = 0
+boss_intro_phase_start = 0
 
 # Track which spawner spawned which enemy
 enemy_source_spawner = {}  # enemy_idx -> spawner_pos
@@ -268,6 +291,7 @@ enemy_attack_cooldown = 0
 player_slash_frame = None
 player_slash_time  = 0
 player_slash_hit_this_swing = set()
+boss_hit_this_swing = False
 enemy_slash_frames = []
 enemy_slash_times  = []
 
@@ -401,6 +425,27 @@ def draw_speed_hud(surface, w, h, gt):
         surface.blit(faded, (lx, ly))
         draw_text(surface, f"{LIGHTNING_COST} coins", 16, lx + icon_size//2, ly + icon_size + 12, (150, 150, 150))
 
+def draw_boss_health_bar(surface, w, hp, hp_max):
+    bar_w = min(560, w - 80)
+    bar_h = 26
+    x = (w - bar_w) // 2
+    y = 14
+    pygame.draw.rect(surface, (35, 35, 35), (x, y, bar_w, bar_h))
+    fill_w = int(bar_w * max(0.0, min(1.0, hp / hp_max)))
+    pygame.draw.rect(surface, (190, 35, 35), (x, y, fill_w, bar_h))
+    pygame.draw.rect(surface, (240, 240, 240), (x, y, bar_w, bar_h), 2)
+    draw_text(surface, "SUPER MEGA MOLE", 20, w // 2, y + bar_h // 2, (255, 255, 255))
+
+def draw_dialogue_box(surface, w, h, text):
+    box_w = min(640, w - 80)
+    box_h = 110
+    x = (w - box_w) // 2
+    y = h - box_h - 30
+    pygame.draw.rect(surface, (22, 22, 22), (x, y, box_w, box_h))
+    pygame.draw.rect(surface, (232, 232, 232), (x, y, box_w, box_h), 4)
+    pygame.draw.rect(surface, (80, 80, 80), (x + 8, y + 8, box_w - 16, box_h - 16), 2)
+    draw_text(surface, text, 36, x + box_w // 2, y + box_h // 2, (255, 255, 255))
+
 def unlock_achievement(key):
     global unlocked_achievements
     if key in unlocked_achievements:
@@ -496,6 +541,8 @@ if choice == 'play':
     unlock_achievement("first_start")
 
 coin_count = 0
+coins_earned_total = 0
+kill_count = 0
 last_dir   = 'down'
 dt = 1/60
 
@@ -526,7 +573,12 @@ while running:
                     konami_buffer.pop(0)
                 if konami_buffer == KONAMI_CODE:
                     coin_count += 1000
-                    buy_prompt_text = "KONAMI! +1000 coins"
+                    coins_earned_total += 1000
+                    kill_count = max(kill_count, BOSS_REQUIRED_KILLS)
+                    coins_earned_total = max(coins_earned_total, BOSS_REQUIRED_COINS)
+                    if coins_earned_total >= 10:
+                        unlock_achievement("rookie_richie")
+                    buy_prompt_text = "KONAMI! +1000 coins, boss unlocked"
                     buy_prompt_until = pygame.time.get_ticks() + 1800
                     konami_buffer.clear()
             if event.key == pygame.K_f:
@@ -554,9 +606,10 @@ while running:
 
     keys = pygame.key.get_pressed()
     glow_t += dt
+    current_time = pygame.time.get_ticks()
 
     # ── Check speed boost expiration ─────────────────────────────────
-    if speed_boost_active and pygame.time.get_ticks() > speed_boost_end_time:
+    if speed_boost_active and current_time > speed_boost_end_time:
         speed_boost_active = False
 
     # ── Melee (space, only when revolver NOT equipped) ───────────────
@@ -564,6 +617,7 @@ while running:
         player_slash_frame = 0
         player_slash_time  = pygame.time.get_ticks()
         player_slash_hit_this_swing = set()
+        boss_hit_this_swing = False
 
     # ── Shoot (space when revolver equipped — one shot per press) ────
     if space_pressed_this_frame and revolver_equipped and bullets > 0:
@@ -608,7 +662,8 @@ while running:
             coin_tiles.remove(ptile)
             play_sound("assets/coin-collect.mp3")
             coin_count += 1
-            if coin_count >= 10:
+            coins_earned_total += 1
+            if coins_earned_total >= 10:
                 unlock_achievement("rookie_richie")
         if ptile in medkit_tiles:
             medkit_tiles.remove(ptile)
@@ -634,9 +689,13 @@ while running:
 
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
-    if shake_time > pygame.time.get_ticks():
+    if shake_time > current_time:
         cam_x += random.uniform(-shake_intensity, shake_intensity)
         cam_y += random.uniform(-shake_intensity, shake_intensity)
+    if boss_intro_active and boss_intro_phase in (0, 2):
+        intro_shake = 0.28 if boss_intro_phase == 0 else 0.42
+        cam_x += random.uniform(-intro_shake, intro_shake)
+        cam_y += random.uniform(-intro_shake, intro_shake)
 
     tile_left   = int(cam_x) - 1
     tile_top    = int(cam_y) - 1
@@ -650,25 +709,59 @@ while running:
 
     coin_frame = int((pygame.time.get_ticks() / 1000 / coin_anim_speed) % len(coin_imgs))
 
+    # ── Boss unlock and intro sequence ───────────────────────────────
+    if (not boss_spawned and not boss_defeated and not boss_intro_active
+            and coins_earned_total >= BOSS_REQUIRED_COINS
+            and kill_count >= BOSS_REQUIRED_KILLS):
+        boss_intro_active = True
+        boss_intro_phase = 0
+        boss_intro_phase_start = current_time
+
+    if boss_intro_active:
+        phase_elapsed = current_time - boss_intro_phase_start
+        if boss_intro_phase == 0 and phase_elapsed >= BOSS_INTRO_RUMBLE1_MS:
+            boss_intro_phase = 1
+            boss_intro_phase_start = current_time
+        elif boss_intro_phase == 1 and phase_elapsed >= BOSS_INTRO_DIALOGUE_MS:
+            boss_intro_phase = 2
+            boss_intro_phase_start = current_time
+        elif boss_intro_phase == 2 and phase_elapsed >= BOSS_INTRO_RUMBLE2_MS:
+            boss_intro_active = False
+            boss_spawned = True
+            boss_health = BOSS_MAX_HEALTH
+            if spawner_tiles:
+                srow, scol = random.choice(tuple(spawner_tiles))
+                boss_x, boss_y = float(scol), float(srow)
+            else:
+                boss_x = world_x + random.choice([-1, 1]) * 8
+                boss_y = world_y + random.choice([-1, 1]) * 8
+            enemy_positions.clear()
+            enemy_health.clear()
+            enemy_slash_frames.clear()
+            enemy_slash_times.clear()
+            enemy_source_spawner.clear()
+            buy_prompt_text = "The SUPER MEGA MOLE has spawned!"
+            buy_prompt_until = current_time + 2400
+
     # ── NEW: Enemy Spawner Logic ─────────────────────────────────────
-    current_time = pygame.time.get_ticks()
-    for spawner_pos in list(spawner_tiles):
-        last_spawn = enemy_spawn_timers.get(spawner_pos, 0)
-        if current_time - last_spawn > ENEMY_SPAWN_INTERVAL:
-            # Count current enemies from this spawner
-            current_count = count_enemies_from_spawner(spawner_pos)
-            if current_count < MAX_ENEMIES_PER_SPAWNER:
-                # Spawn new enemy
-                spawn_col, spawn_row = spawner_pos[1], spawner_pos[0]
-                # Spawn nearby but not on top of spawner
-                offset_x = random.choice([-1, 1]) * random.uniform(1, 2)
-                offset_y = random.choice([-1, 1]) * random.uniform(1, 2)
-                enemy_positions.append([spawn_col + offset_x, spawn_row + offset_y])
-                enemy_health.append(1)
-                enemy_slash_frames.append(None)
-                enemy_slash_times.append(0)
-                enemy_source_spawner[len(enemy_positions) - 1] = spawner_pos
-                enemy_spawn_timers[spawner_pos] = current_time
+    if not boss_spawned and not boss_intro_active:
+        for spawner_pos in list(spawner_tiles):
+            last_spawn = enemy_spawn_timers.get(spawner_pos, 0)
+            if current_time - last_spawn > ENEMY_SPAWN_INTERVAL:
+                # Count current enemies from this spawner
+                current_count = count_enemies_from_spawner(spawner_pos)
+                if current_count < MAX_ENEMIES_PER_SPAWNER:
+                    # Spawn new enemy
+                    spawn_col, spawn_row = spawner_pos[1], spawner_pos[0]
+                    # Spawn nearby but not on top of spawner
+                    offset_x = random.choice([-1, 1]) * random.uniform(1, 2)
+                    offset_y = random.choice([-1, 1]) * random.uniform(1, 2)
+                    enemy_positions.append([spawn_col + offset_x, spawn_row + offset_y])
+                    enemy_health.append(1)
+                    enemy_slash_frames.append(None)
+                    enemy_slash_times.append(0)
+                    enemy_source_spawner[len(enemy_positions) - 1] = spawner_pos
+                    enemy_spawn_timers[spawner_pos] = current_time
 
     # ── Move bullets ─────────────────────────────────────────────────
     dead_enemies = set()
@@ -680,6 +773,7 @@ while running:
         if b[4] > BULLET_RANGE or map_grid.get((int(b[1]), int(b[0])), 'air') == 'rock':
             dead_bullets.append(bi)
             continue
+        hit_enemy = False
         for i in range(len(enemy_positions)):
             ex, ey = enemy_positions[i]
             if math.hypot(b[0]-ex, b[1]-ey) < BULLET_RADIUS:
@@ -688,7 +782,15 @@ while running:
                     dead_enemies.add(i)
                 dead_bullets.append(bi)
                 play_sound("assets/hurt.mp3")
+                hit_enemy = True
                 break
+        if hit_enemy:
+            continue
+        if boss_spawned and not boss_defeated:
+            if math.hypot(b[0] - boss_x, b[1] - boss_y) < BOSS_HIT_RADIUS:
+                boss_health -= BOSS_RANGED_DAMAGE
+                dead_bullets.append(bi)
+                play_sound("assets/hurt.mp3")
     for bi in sorted(set(dead_bullets), reverse=True):
         active_bullets.pop(bi)
 
@@ -771,10 +873,48 @@ while running:
                 dead_enemies.add(i)
             play_sound("assets/hurt.mp3")
 
+    if boss_spawned and not boss_defeated:
+        bdx = world_x - boss_x
+        bdy = world_y - boss_y
+        bdist = math.hypot(bdx, bdy)
+        if bdist > 0.1:
+            move_x = BOSS_MOVE_SPEED * bdx / bdist
+            move_y = BOSS_MOVE_SPEED * bdy / bdist
+            next_boss_x = boss_x + move_x
+            next_boss_y = boss_y + move_y
+            if map_grid.get((int(next_boss_y), int(next_boss_x)), None) != 'rock':
+                boss_x = next_boss_x
+                boss_y = next_boss_y
+
+        if bdist < BOSS_ATTACK_REACH and health > 0 and current_time > boss_attack_cooldown:
+            health -= 2
+            boss_attack_cooldown = current_time + 1200
+            shake_time = pygame.time.get_ticks() + 260
+            shake_intensity = 0.22
+            play_sound("assets/hurt.mp3")
+
+        if (player_slash_frame is not None
+                and player_slash_frame < 6
+                and not boss_hit_this_swing
+                and bdist < BOSS_SLASH_REACH):
+            boss_health -= BOSS_MELEE_DAMAGE
+            boss_hit_this_swing = True
+            play_sound("assets/hurt.mp3")
+
+        if boss_health <= 0:
+            boss_health = 0
+            boss_defeated = True
+            boss_spawned = False
+
     # Remove dead enemies and reset spawner cooldown so replacements do not appear instantly
     for i in sorted(dead_enemies, reverse=True):
         source = enemy_source_spawner.get(i)
         remove_enemy(i)
+        kill_count += 1
+        coin_count += 1
+        coins_earned_total += 1
+        if coins_earned_total >= 10:
+            unlock_achievement("rookie_richie")
         if source in enemy_spawn_timers:
             enemy_spawn_timers[source] = max(enemy_spawn_timers[source], current_time)
 
@@ -795,6 +935,10 @@ while running:
                 screen.blit(slash_frames[enemy_slash_frames[i]], (int(esx), int(esy)))
             else:
                 enemy_slash_frames[i] = None
+
+    if boss_spawned and not boss_defeated:
+        bsx, bsy = world_to_screen(boss_x, boss_y, cam_x, cam_y)
+        screen.blit(boss_img, (int(bsx - boss_size // 2), int(bsy - boss_size // 2)))
 
     # ── Trail ─────────────────────────────────────────────────────────
     for idx, (tx, ty) in enumerate(trail):
@@ -833,6 +977,13 @@ while running:
 
     # ── Coin counter ──────────────────────────────────────────────────
     draw_text(screen, f"Coins: {coin_count}", 32, width-100, 40, (255,223,0))
+    draw_text(screen, f"Kills: {kill_count}", 26, width-95, 76, (235, 235, 235))
+
+    if not boss_spawned and not boss_defeated and not boss_intro_active:
+        obj = f"Boss unlock: {coins_earned_total}/{BOSS_REQUIRED_COINS} coins, {kill_count}/{BOSS_REQUIRED_KILLS} kills"
+        draw_text(screen, obj, 22, width // 2, 30, (210, 210, 210))
+    if boss_spawned and not boss_defeated:
+        draw_boss_health_bar(screen, width, boss_health, BOSS_MAX_HEALTH)
 
     # ── Hearts ────────────────────────────────────────────────────────
     h = health
@@ -854,9 +1005,20 @@ while running:
 
     # ── Achievement popup ─────────────────────────────────────────────
     draw_achievement_popup(screen, width)
+    if boss_intro_active and boss_intro_phase == 1:
+        draw_dialogue_box(screen, width, height, "I feel a rumble...")
 
-    # ── Game Over Effect ─────────────────────────────────────────────
-    if health <= 0:
+    # ── End states ───────────────────────────────────────────────────
+    if boss_defeated:
+        fade = pygame.Surface((width, height), pygame.SRCALPHA)
+        fade.fill((40, 90, 40, 190))
+        screen.blit(fade, (0, 0))
+        draw_text(screen, "BOSS DOWN", 88, width//2, height//2 - 18, (255, 255, 255))
+        draw_text(screen, "You beat the Super Mega Mole", 36, width//2, height//2 + 42, (255, 230, 170))
+        pygame.display.flip()
+        pygame.time.wait(2600)
+        running = False
+    elif health <= 0:
         fade = pygame.Surface((width, height), pygame.SRCALPHA)
         fade.fill((80, 80, 80, 200))
         screen.blit(fade, (0, 0))
