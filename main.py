@@ -206,6 +206,9 @@ unlocked_achievements = load_unlocked_achievements(ACHIEVEMENT_SAVE_FILE)
 achievement_queue = []
 active_achievement = None
 
+KONAMI_CODE = ["up", "up", "down", "down", "left", "right", "left", "right", "b", "a"]
+konami_buffer = []
+
 trail = []
 trail_length = 20
 air_color = (30, 30, 30)
@@ -508,6 +511,24 @@ while running:
             cols = width // cell_size
             rows = height // cell_size
         elif event.type == pygame.KEYDOWN:
+            konami_map = {
+                pygame.K_UP: "up",
+                pygame.K_DOWN: "down",
+                pygame.K_LEFT: "left",
+                pygame.K_RIGHT: "right",
+                pygame.K_b: "b",
+                pygame.K_a: "a",
+            }
+            konami_input = konami_map.get(event.key)
+            if konami_input:
+                konami_buffer.append(konami_input)
+                if len(konami_buffer) > len(KONAMI_CODE):
+                    konami_buffer.pop(0)
+                if konami_buffer == KONAMI_CODE:
+                    coin_count += 1000
+                    buy_prompt_text = "KONAMI! +1000 coins"
+                    buy_prompt_until = pygame.time.get_ticks() + 1800
+                    konami_buffer.clear()
             if event.key == pygame.K_f:
                 pygame.display.toggle_fullscreen()
             elif event.key == pygame.K_ESCAPE:
@@ -546,11 +567,19 @@ while running:
 
     # ── Shoot (space when revolver equipped — one shot per press) ────
     if space_pressed_this_frame and revolver_equipped and bullets > 0:
-        dir_map = {'up':(0,-1), 'down':(0,1), 'left':(-1,0), 'right':(1,0)}
-        bdx, bdy = dir_map.get(last_dir, (0,1))
-        active_bullets.append([world_x, world_y, bdx, bdy, 0.0])
-        bullets -= 1
-        play_sound("assets/shoot.mp3")
+        mx, my = pygame.mouse.get_pos()
+        cam_x_now = world_x - cols / 2
+        cam_y_now = world_y - rows / 2
+        target_wx = cam_x_now + (mx / cell_size)
+        target_wy = cam_y_now + (my / cell_size)
+        shot_dx = target_wx - world_x
+        shot_dy = target_wy - world_y
+        shot_len = math.hypot(shot_dx, shot_dy)
+        if shot_len > 0:
+            bdx, bdy = shot_dx / shot_len, shot_dy / shot_len
+            active_bullets.append([world_x, world_y, bdx, bdy, 0.0])
+            bullets -= 1
+            play_sound("assets/shoot.mp3")
 
     # ── Movement ─────────────────────────────────────────────────────
     current_speed = speed * (speed_boost_multiplier if speed_boost_active else 1.0)
