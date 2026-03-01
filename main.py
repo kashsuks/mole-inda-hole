@@ -241,6 +241,7 @@ enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
 enemy_speed = 2.5 / cell_size
 enemy_positions = []  # Now dynamic list
 enemy_spawn_timers = {}  # spawner_pos -> last_spawn_time
+enemy_health = []
 
 # Track which spawner spawned which enemy
 enemy_source_spawner = {}  # enemy_idx -> spawner_pos
@@ -468,6 +469,8 @@ def count_enemies_from_spawner(spawner_pos):
 def remove_enemy(idx):
     if idx < len(enemy_positions):
         enemy_positions.pop(idx)
+        if idx < len(enemy_health):
+            enemy_health.pop(idx)
         if idx < len(enemy_slash_frames):
             enemy_slash_frames.pop(idx)
         if idx < len(enemy_slash_times):
@@ -632,12 +635,14 @@ while running:
                 offset_x = random.choice([-1, 1]) * random.uniform(1, 2)
                 offset_y = random.choice([-1, 1]) * random.uniform(1, 2)
                 enemy_positions.append([spawn_col + offset_x, spawn_row + offset_y])
+                enemy_health.append(1)
                 enemy_slash_frames.append(None)
                 enemy_slash_times.append(0)
                 enemy_source_spawner[len(enemy_positions) - 1] = spawner_pos
                 enemy_spawn_timers[spawner_pos] = current_time
 
     # ── Move bullets ─────────────────────────────────────────────────
+    dead_enemies = set()
     dead_bullets = []
     for bi, b in enumerate(active_bullets):
         b[0] += b[2] * BULLET_SPEED
@@ -649,9 +654,9 @@ while running:
         for i in range(len(enemy_positions)):
             ex, ey = enemy_positions[i]
             if math.hypot(b[0]-ex, b[1]-ey) < BULLET_RADIUS:
-                d = math.hypot(ex-b[0], ey-b[1]) or 0.001
-                enemy_positions[i][0] += (ex-b[0])/d * 3.0
-                enemy_positions[i][1] += (ey-b[1])/d * 3.0
+                enemy_health[i] -= 1
+                if enemy_health[i] <= 0:
+                    dead_enemies.add(i)
                 dead_bullets.append(bi)
                 play_sound("assets/hurt.mp3")
                 break
@@ -697,8 +702,9 @@ while running:
         pygame.draw.circle(screen, (200, 150,  20), (int(bsx), int(bsy)), BULLET_SIZE_PX - 2)
 
     # ── Enemy AI + damage ─────────────────────────────────────────────
-    dead_enemies = []
     for i in range(len(enemy_positions)):
+        if i in dead_enemies:
+            continue
         ex, ey = enemy_positions[i]
         ddx = world_x - ex
         ddy = world_y - ey
@@ -731,10 +737,17 @@ while running:
                 and i not in player_slash_hit_this_swing
                 and dist < PLAYER_SLASH_REACH):
             player_slash_hit_this_swing.add(i)
-            if dist > 0:
-                enemy_positions[i][0] += (ex - world_x) / dist * 2.0
-                enemy_positions[i][1] += (ey - world_y) / dist * 2.0
+            enemy_health[i] -= 1
+            if enemy_health[i] <= 0:
+                dead_enemies.add(i)
             play_sound("assets/hurt.mp3")
+
+    # Remove dead enemies and reset spawner cooldown so replacements do not appear instantly
+    for i in sorted(dead_enemies, reverse=True):
+        source = enemy_source_spawner.get(i)
+        remove_enemy(i)
+        if source in enemy_spawn_timers:
+            enemy_spawn_timers[source] = max(enemy_spawn_timers[source], current_time)
 
     # ── Draw enemies ──────────────────────────────────────────────────
     for i in range(len(enemy_positions)):
