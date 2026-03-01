@@ -62,10 +62,26 @@ rock_img = pygame.image.load("assets/rock1.png")
 rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
 
 # load dirt
+mole_img_orig = pygame.image.load("assets/mole.png")
+mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
+mole_img = mole_img_orig
 dirt_imgs = [
     pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
     for i in range(1, 4)
 ]
+
+# Load key images
+w_key_img = pygame.image.load("assets/w_key.png")
+a_key_img = pygame.image.load("assets/a_key.png")
+s_key_img = pygame.image.load("assets/s_key.png")
+d_key_img = pygame.image.load("assets/d_key.png")
+
+# Optionally scale keys for UI
+key_size = 48
+w_key_img = pygame.transform.scale(w_key_img, (key_size, key_size))
+a_key_img = pygame.transform.scale(a_key_img, (key_size, key_size))
+s_key_img = pygame.transform.scale(s_key_img, (key_size, key_size))
+d_key_img = pygame.transform.scale(d_key_img, (key_size, key_size))
 mole_img_orig = pygame.image.load("assets/mole.png")
 mole_img_orig = pygame.transform.scale(mole_img_orig, (square_size, square_size))
 mole_img = mole_img_orig
@@ -277,7 +293,37 @@ while running:
     mole_sx, mole_sy = world_to_screen(world_x, world_y, cam_x, cam_y)
     screen.blit(mole_img, (int(mole_sx), int(mole_sy)))
 
-    # Draw coin counter in top right
+    key_x = 40
+    key_y = height - 120
+    if keys[pygame.K_w]:
+        w_alpha = 255
+    else:
+        w_alpha = 100
+    w_img = w_key_img.copy()
+    w_img.set_alpha(w_alpha)
+    screen.blit(w_img, (key_x + key_size, key_y))
+    if keys[pygame.K_a]:
+        a_alpha = 255
+    else:
+        a_alpha = 100
+    a_img = a_key_img.copy()
+    a_img.set_alpha(a_alpha)
+    screen.blit(a_img, (key_x, key_y + key_size))
+    if keys[pygame.K_s]:
+        s_alpha = 255
+    else:
+        s_alpha = 100
+    s_img = s_key_img.copy()
+    s_img.set_alpha(s_alpha)
+    screen.blit(s_img, (key_x + key_size, key_y + key_size))
+    if keys[pygame.K_d]:
+        d_alpha = 255
+    else:
+        d_alpha = 100
+    d_img = d_key_img.copy()
+    d_img.set_alpha(d_alpha)
+    screen.blit(d_img, (key_x + 2 * key_size, key_y + key_size))
+
     draw_text(screen, f"Coins: {coin_count}", 32, width - 100, 40, (255, 223, 0))
     pygame.display.flip()
     clock.tick(60)
