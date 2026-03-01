@@ -127,6 +127,8 @@ fossil_img  = pygame.transform.scale(pygame.image.load("assets/fossil1.png"), (c
 rock_img    = pygame.transform.scale(pygame.image.load("assets/rock1.png"),   (cell_size, cell_size))
 medkit_img  = pygame.transform.scale(pygame.image.load("assets/medkit.png"),  (cell_size, cell_size))
 bullet_img  = pygame.transform.scale(pygame.image.load("assets/bullet.png"),  (cell_size, cell_size))
+# NEW: Lightning speed powerup image
+lightning_img = pygame.transform.scale(pygame.image.load("assets/lightning.png"), (cell_size, cell_size))
 
 mole_img_orig = pygame.transform.scale(pygame.image.load("assets/mole.png"), (square_size, square_size))
 mole_img = mole_img_orig
@@ -186,7 +188,17 @@ map_grid    = {}
 coin_tiles  = set()
 medkit_tiles = set()
 bullet_tiles = set()
+# NEW: Lightning speed powerup tiles
+lightning_tiles = set()
 coin_spawn_chance = 0.03
+
+# NEW: Speed powerup settings
+LIGHTNING_COST = 10
+BASE_SPEED = 5
+speed_boost_active = False
+speed_boost_multiplier = 2.0  # 2x speed when collected
+speed_boost_end_time = 0
+SPEED_BOOST_DURATION = 5000  # 5 seconds in milliseconds
 
 def generate_tile(row, col):
     n = pnoise2(col * 0.15 + seed, row * 0.15 + seed)
@@ -203,6 +215,10 @@ def generate_tile(row, col):
             if random.random() < 0.01:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
                     bullet_tiles.add((row, col))
+            # NEW: Chance to spawn lightning speed powerup
+            if random.random() < 0.005:
+                if (row, col) not in coin_tiles and (row, col) not in medkit_tiles and (row, col) not in bullet_tiles:
+                    lightning_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
     else:
         r = random.random()
@@ -214,6 +230,10 @@ def generate_tile(row, col):
             if random.random() < 0.01:
                 if (row, col) not in coin_tiles and (row, col) not in medkit_tiles:
                     bullet_tiles.add((row, col))
+            # NEW: Chance to spawn lightning speed powerup
+            if random.random() < 0.005:
+                if (row, col) not in coin_tiles and (row, col) not in medkit_tiles and (row, col) not in bullet_tiles:
+                    lightning_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
@@ -267,6 +287,30 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
             pygame.draw.circle(surface, color, (px, py), pip_r)
         hint = "[1] equipped" if equipped else "[1] equip"
         draw_text(surface, hint, 17, ix + REVOLVER_ICON_SIZE//2, iy+REVOLVER_ICON_SIZE+12, (190,190,190))
+
+# NEW: Draw speed boost HUD
+def draw_speed_hud(surface, w, h, gt):
+    # Draw lightning icon in top right area
+    icon_size = 40
+    lx = w - icon_size - 20
+    ly = 100  # Below coin counter
+
+    if speed_boost_active:
+        # Pulsing glow when active
+        pulse = int(100 + 100 * math.sin(gt * 8))
+        glow_surf = pygame.Surface((icon_size, icon_size), pygame.SRCALPHA)
+        glow_surf.fill((255, 255, 0, pulse))
+        surface.blit(glow_surf, (lx, ly))
+        pygame.draw.rect(surface, (255, 255, 0), (lx-2, ly-2, icon_size+4, icon_size+4), 2)
+        # Show remaining time
+        remaining = max(0, (speed_boost_end_time - pygame.time.get_ticks()) / 1000)
+        draw_text(surface, f"SPEED! {remaining:.1f}s", 20, lx + icon_size//2, ly + icon_size + 15, (255, 255, 0))
+    else:
+        # Dim when not active
+        faded = lightning_img.copy()
+        faded.set_alpha(80)
+        surface.blit(faded, (lx, ly))
+        draw_text(surface, f"{LIGHTNING_COST} coins", 16, lx + icon_size//2, ly + icon_size + 12, (150, 150, 150))
 
 # Enemy setup
 enemy_img = pygame.transform.scale(mole_img_orig, (square_size, square_size))
@@ -339,6 +383,10 @@ while running:
     keys = pygame.key.get_pressed()
     glow_t += dt
 
+    # ── Check speed boost expiration ─────────────────────────────────
+    if speed_boost_active and pygame.time.get_ticks() > speed_boost_end_time:
+        speed_boost_active = False
+
     # ── Melee (space, only when revolver NOT equipped) ───────────────
     if space_pressed_this_frame and not revolver_equipped and player_slash_frame is None:
         player_slash_frame = 0
@@ -354,12 +402,15 @@ while running:
         play_sound("assets/shoot.mp3")
 
     # ── Movement ─────────────────────────────────────────────────────
+    # NEW: Apply speed boost multiplier if active
+    current_speed = speed * (speed_boost_multiplier if speed_boost_active else 1.0)
+
     dx, dy = 0.0, 0.0
     dir_now = None
-    if keys[pygame.K_w]: dy -= speed / cell_size; dir_now = 'up'
-    if keys[pygame.K_s]: dy += speed / cell_size; dir_now = 'down'
-    if keys[pygame.K_a]: dx -= speed / cell_size; dir_now = 'left'
-    if keys[pygame.K_d]: dx += speed / cell_size; dir_now = 'right'
+    if keys[pygame.K_w]: dy -= current_speed / cell_size; dir_now = 'up'
+    if keys[pygame.K_s]: dy += current_speed / cell_size; dir_now = 'down'
+    if keys[pygame.K_a]: dx -= current_speed / cell_size; dir_now = 'left'
+    if keys[pygame.K_d]: dx += current_speed / cell_size; dir_now = 'right'
 
     if dir_now:
         last_dir = dir_now
@@ -386,6 +437,19 @@ while running:
             if revolver_unlocked:
                 bullets = REVOLVER_MAX_BULLETS
                 play_sound("assets/coin-collect.mp3")
+        # NEW: Collect lightning speed powerup
+        if ptile in lightning_tiles:
+            if coin_count >= LIGHTNING_COST:
+                lightning_tiles.remove(ptile)
+                coin_count -= LIGHTNING_COST
+                speed_boost_active = True
+                speed_boost_end_time = pygame.time.get_ticks() + SPEED_BOOST_DURATION
+                play_sound("assets/coin-collect.mp3")  # You might want a different sound
+                buy_prompt_text = "SPEED BOOST!"
+                buy_prompt_until = pygame.time.get_ticks() + 1500
+            else:
+                buy_prompt_text = f"Need {LIGHTNING_COST} coins!"
+                buy_prompt_until = pygame.time.get_ticks() + 1000
 
     cam_x = world_x - cols / 2
     cam_y = world_y - rows / 2
@@ -447,6 +511,12 @@ while running:
                 screen.blit(medkit_img, (ipx, ipy))
             if (row, col) in bullet_tiles:
                 screen.blit(bullet_img, (ipx, ipy))
+            # NEW: Draw lightning powerup
+            if (row, col) in lightning_tiles:
+                screen.blit(lightning_img, (ipx, ipy))
+                # Draw cost indicator above lightning
+                cost_text = f"{LIGHTNING_COST}"
+                draw_text(screen, cost_text, 14, ipx + cell_size//2, ipy - 8, (255, 255, 0))
 
     # ── Draw bullets ──────────────────────────────────────────────────
     for b in active_bullets:
@@ -551,6 +621,9 @@ while running:
     # ── Revolver HUD ──────────────────────────────────────────────────
     draw_revolver_hud(screen, coin_count, revolver_unlocked, revolver_equipped,
                       bullets, width, height, glow_t)
+
+    # NEW: Speed boost HUD
+    draw_speed_hud(screen, width, height, glow_t)
 
     # ── Buy prompt flash ──────────────────────────────────────────────
     if pygame.time.get_ticks() < buy_prompt_until:
