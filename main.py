@@ -71,6 +71,15 @@ dirt_imgs = [
 ]
 
 # Load key images
+w_heart_img = pygame.image.load("assets/heart-full.png")
+half_heart_img = pygame.image.load("assets/heart-half.png")
+empty_heart_img = pygame.image.load("assets/heart-empty.png")
+
+# Optionally scale hearts for UI
+heart_size = 40
+w_heart_img = pygame.transform.scale(w_heart_img, (heart_size, heart_size))
+half_heart_img = pygame.transform.scale(half_heart_img, (heart_size, heart_size))
+empty_heart_img = pygame.transform.scale(empty_heart_img, (heart_size, heart_size))
 w_key_img = pygame.image.load("assets/w_key.png")
 a_key_img = pygame.image.load("assets/a_key.png")
 s_key_img = pygame.image.load("assets/s_key.png")
@@ -159,6 +168,8 @@ coin_spawn_chance = 0.03
 coin_tiles = set()
 
 # start screen before game loop
+max_health = 6  # 3 hearts, each heart = 2 health
+health = max_health
 
 choice = start_screen(screen, width, height)
 if choice == 'play':
@@ -280,6 +291,14 @@ while running:
     for ex, ey in enemy_positions:
         esx, esy = world_to_screen(ex, ey, cam_x, cam_y)
         screen.blit(enemy_img, (int(esx), int(esy)))
+        # Enemy attack logic
+        dist = math.hypot(world_x - ex, world_y - ey)
+        if dist < 0.7 and health > 0:
+            if 'enemy_attack_cooldown' not in locals():
+                enemy_attack_cooldown = 0
+            if pygame.time.get_ticks() > enemy_attack_cooldown:
+                health -= 1
+                enemy_attack_cooldown = pygame.time.get_ticks() + 1000  # 1 second cooldown
 
     # draw the trail
     for i, (tx, ty) in enumerate(trail):
@@ -325,5 +344,16 @@ while running:
     screen.blit(d_img, (key_x + 2 * key_size, key_y + key_size))
 
     draw_text(screen, f"Coins: {coin_count}", 32, width - 100, 40, (255, 223, 0))
+    heart_x = 40
+    heart_y = 40
+    h = health
+    for i in range(3):
+        if h >= 2:
+            screen.blit(w_heart_img, (heart_x + i * (heart_size + 8), heart_y))
+        elif h == 1:
+            screen.blit(half_heart_img, (heart_x + i * (heart_size + 8), heart_y))
+        else:
+            screen.blit(empty_heart_img, (heart_x + i * (heart_size + 8), heart_y))
+        h -= 2
     pygame.display.flip()
     clock.tick(60)
