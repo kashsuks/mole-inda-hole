@@ -10,11 +10,67 @@ def draw_text(surface, text, size, x, y, color=(255,255,255)):
     text_rect = text_surface.get_rect(center=(x, y))
     surface.blit(text_surface, text_rect)
 
-def start_screen(screen, width, height):
+def settings_screen(screen, width, height, music_volume, sfx_volume):
+    running = True
+    slider_rect_music = pygame.Rect(width//2-150, height//2-60, 300, 20)
+    slider_rect_sfx = pygame.Rect(width//2-150, height//2+20, 300, 20)
+    knob_radius = 12
+    music_knob_x = int(slider_rect_music.x + music_volume * slider_rect_music.width)
+    sfx_knob_x = int(slider_rect_sfx.x + sfx_volume * slider_rect_sfx.width)
+    dragging_music = False
+    dragging_sfx = False
+    font_size = 32
+    back_rect = pygame.Rect(width//2-60, height//2+80, 120, 40)
+    while running:
+        screen.fill((30,30,30))
+        draw_text(screen, "Settings", 48, width//2, height//2-120)
+        draw_text(screen, "Music Volume", font_size, width//2, height//2-80)
+        draw_text(screen, "SFX Volume", font_size, width//2, height//2)
+        pygame.draw.rect(screen, (120,120,120), slider_rect_music)
+        pygame.draw.rect(screen, (120,120,120), slider_rect_sfx)
+        pygame.draw.circle(screen, (70,130,180), (music_knob_x, slider_rect_music.y+10), knob_radius)
+        pygame.draw.circle(screen, (70,130,180), (sfx_knob_x, slider_rect_sfx.y+10), knob_radius)
+        pygame.draw.rect(screen, (70,130,180), back_rect)
+        draw_text(screen, "Back", 32, back_rect.centerx, back_rect.centery)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = event.pos
+                if (music_knob_x-knob_radius <= mx <= music_knob_x+knob_radius and
+                    slider_rect_music.y <= my <= slider_rect_music.y+20):
+                    dragging_music = True
+                if (sfx_knob_x-knob_radius <= mx <= sfx_knob_x+knob_radius and
+                    slider_rect_sfx.y <= my <= slider_rect_sfx.y+20):
+                    dragging_sfx = True
+                if back_rect.collidepoint(mx, my):
+                    running = False
+            elif event.type == pygame.MOUSEBUTTONUP:
+                dragging_music = False
+                dragging_sfx = False
+            elif event.type == pygame.MOUSEMOTION:
+                mx, my = event.pos
+                if dragging_music:
+                    music_knob_x = max(slider_rect_music.x, min(mx, slider_rect_music.x+slider_rect_music.width))
+                    music_volume = (music_knob_x - slider_rect_music.x) / slider_rect_music.width
+                    pygame.mixer.music.set_volume(music_volume)
+                if dragging_sfx:
+                    sfx_knob_x = max(slider_rect_sfx.x, min(mx, slider_rect_sfx.x+slider_rect_sfx.width))
+                    sfx_volume = (sfx_knob_x - slider_rect_sfx.x) / slider_rect_sfx.width
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+        pygame.display.flip()
+        pygame.time.Clock().tick(60)
+    return music_volume, sfx_volume
+
+def start_screen(screen, width, height, music_volume, sfx_volume):
     play_rect = pygame.Rect(width//2-100, height//2-40, 200, 50)
     settings_rect = pygame.Rect(width//2-100, height//2+30, 200, 50)
 
     pygame.mixer.music.load("assets/loading.flac")
+    pygame.mixer.music.set_volume(music_volume)
     pygame.mixer.music.play(-1)
     while True:
         screen.fill((30, 30, 30))
@@ -31,9 +87,10 @@ def start_screen(screen, width, height):
                 mx, my = event.pos
                 if play_rect.collidepoint(mx, my):
                     pygame.mixer.music.stop()
-                    return 'play'
+                    return 'play', music_volume, sfx_volume
                 if settings_rect.collidepoint(mx, my):
-                    return 'settings'
+                    music_volume, sfx_volume = settings_screen(screen, width, height, music_volume, sfx_volume)
+                    pygame.mixer.music.set_volume(music_volume)
         pygame.display.flip()
         pygame.time.Clock().tick(60)
 
@@ -55,6 +112,15 @@ speed = 5
 clock = pygame.time.Clock()
 
 world_x, world_y = float(cols // 2), float(rows // 2)
+
+# Volume defaults — must be initialized before start_screen is called
+music_volume = 0.5
+sfx_volume = 0.5
+
+def play_sound(path):
+    sound = pygame.mixer.Sound(path)
+    sound.set_volume(sfx_volume)
+    sound.play()
 
 # Load images
 fossil_img = pygame.image.load("assets/fossil1.png")
@@ -179,15 +245,11 @@ player_slash_time = 0
 enemy_slash_frames = [None for _ in range(num_enemies)]
 enemy_slash_times = [0 for _ in range(num_enemies)]
 
-choice = start_screen(screen, width, height)
+choice, music_volume, sfx_volume = start_screen(screen, width, height, music_volume, sfx_volume)
 if choice == 'play':
     pygame.mixer.music.load("assets/main.flac")
+    pygame.mixer.music.set_volume(music_volume)
     pygame.mixer.music.play(-1)
-elif choice == 'settings':
-    screen.fill((30, 30, 30))
-    draw_text(screen, "Settings coming soon!", 40, width//2, height//2)
-    pygame.display.flip()
-    pygame.time.wait(1500)
 
 coin_count = 0
 last_dir = 'down'
@@ -204,10 +266,12 @@ while running:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_f:
                 pygame.display.toggle_fullscreen()
+            elif event.key == pygame.K_ESCAPE:
+                music_volume, sfx_volume = settings_screen(screen, width, height, music_volume, sfx_volume)
+                pygame.mixer.music.set_volume(music_volume)
 
     keys = pygame.key.get_pressed()
 
-    # Player attack
     if keys[pygame.K_SPACE] and player_slash_frame is None:
         player_slash_frame = 0
         player_slash_time = pygame.time.get_ticks()
@@ -249,8 +313,7 @@ while running:
         player_tile = (int(world_y), int(world_x))
         if player_tile in coin_tiles:
             coin_tiles.remove(player_tile)
-            coin_sound = pygame.mixer.Sound("assets/coin-collect.mp3")
-            coin_sound.play()
+            play_sound("assets/coin-collect.mp3")
             coin_count += 1
         if player_tile in medkit_tiles:
             medkit_tiles.remove(player_tile)
@@ -297,7 +360,7 @@ while running:
             if (row, col) in medkit_tiles:
                 screen.blit(medkit_img, (ipx, ipy))
 
-    # Enemy AI + damage (single loop, no duplication)
+    # Enemy AI + damage
     for i in range(num_enemies):
         ex, ey = enemy_positions[i]
         ddx = world_x - ex
@@ -320,7 +383,7 @@ while running:
                 enemy_slash_times[i] = pygame.time.get_ticks()
                 shake_time = pygame.time.get_ticks() + 200
                 shake_intensity = 0.15
-                pygame.mixer.Sound("assets/hurt.mp3").play()
+                play_sound("assets/hurt.mp3")
 
     # Draw enemies
     for i in range(num_enemies):
