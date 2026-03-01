@@ -60,7 +60,8 @@ fossil_img = pygame.image.load("assets/fossil1.png")
 fossil_img = pygame.transform.scale(fossil_img, (cell_size, cell_size))
 rock_img = pygame.image.load("assets/rock1.png")
 rock_img = pygame.transform.scale(rock_img, (cell_size, cell_size))
-## Load dirt images for soil
+
+# load dirt
 dirt_imgs = [
     pygame.transform.scale(pygame.image.load(f"assets/dirt{i}.png"), (cell_size, cell_size))
     for i in range(1, 4)
@@ -99,13 +100,18 @@ def generate_tile(row, col):
         elif n > 0.1 and random.random() < fossil_chance:
             return 'fossil'
         else:
-            # Pick a random dirt image for soil
+            if random.random() < coin_spawn_chance:
+                coin_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
     else:
         r = random.random()
         if r < 0.33:
+            if random.random() < coin_spawn_chance:
+                coin_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
         elif r < 0.66:
+            if random.random() < coin_spawn_chance:
+                coin_tiles.add((row, col))
             return f'dirt{random.randint(1,3)}'
         else:
             return 'air'
@@ -129,6 +135,12 @@ enemy_positions = [
     [world_x + random.randint(-10, 10), world_y + random.randint(-10, 10)]
     for _ in range(num_enemies)
 ]
+
+# Coin animation setup
+coin_imgs = [pygame.transform.scale(pygame.image.load(f"assets/coin{i}.png"), (cell_size, cell_size)) for i in range(1, 9)]
+coin_anim_speed = 0.15  # seconds per frame
+coin_spawn_chance = 0.03
+coin_tiles = set()
 
 # start screen before game loop
 
@@ -206,6 +218,7 @@ while running:
     if len(trail) > trail_length:
         trail.pop(0)
 
+    coin_frame = int((pygame.time.get_ticks() / 1000 / coin_anim_speed) % len(coin_imgs))
     for row in range(tile_top, tile_bottom):
         for col in range(tile_left, tile_right):
             tile = map_grid[(row, col)]
@@ -222,6 +235,9 @@ while running:
                 screen.blit(rock_img, (ipx, ipy))
             elif tile == 'air':
                 pygame.draw.rect(screen, air_color, (ipx, ipy, cell_size + 1, cell_size + 1))
+            # Draw coin if present
+            if (row, col) in coin_tiles:
+                screen.blit(coin_imgs[coin_frame], (ipx, ipy))
 
     # enemy ai
     for i, (ex, ey) in enumerate(enemy_positions):
