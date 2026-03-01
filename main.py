@@ -129,7 +129,7 @@ medkit_img  = pygame.transform.scale(pygame.image.load("assets/medkit.png"),  (c
 bullet_img  = pygame.transform.scale(pygame.image.load("assets/bullet.png"),  (cell_size, cell_size))
 lightning_img = pygame.transform.scale(pygame.image.load("assets/lightning.png"), (cell_size, cell_size))
 # NEW: Spawner image
-spawner_img = pygame.transform.scale(pygame.image.load("assets/spawner.png"), (cell_size, cell_size))
+spawner_img = pygame.transform.scale(pygame.image.load("assets/spawner.png").convert_alpha(), (cell_size, cell_size))
 
 mole_img_orig = pygame.transform.scale(pygame.image.load("assets/mole.png"), (square_size, square_size))
 mole_img = mole_img_orig
@@ -196,7 +196,7 @@ coin_spawn_chance = 0.03
 
 # NEW: Spawner settings
 SPAWNER_SPAWN_CHANCE = 0.008  # Chance per valid tile
-SPAWNER_MIN_DISTANCE_FROM_PLAYER = 15  # Don't spawn too close to player
+SPAWNER_MIN_DISTANCE_FROM_PLAYER = 8  # Keep enough distance, but still allow spawning in generated area
 ENEMY_SPAWN_INTERVAL = 3000  # Spawn enemy every 3 seconds from each spawner
 MAX_ENEMIES_PER_SPAWNER = 3  # Max enemies per spawner at once
 
