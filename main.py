@@ -56,7 +56,7 @@ def settings_screen(screen, width, height, music_volume, sfx_volume):
                     music_volume = (music_knob_x - slider_rect_music.x) / slider_rect_music.width
                     pygame.mixer.music.set_volume(music_volume)
                 if dragging_sfx:
-                    sfx_knob_x = max(slider_rect_sfx.x, min(mx, slider_rect_sfx.x+slider_rect_sfx.width))
+                    sfx_knob_x = max(slider_rect_sfx.x, min(mx, sfx_rect_sfx.x+slider_rect_sfx.width))
                     sfx_volume = (sfx_knob_x - slider_rect_sfx.x) / slider_rect_sfx.width
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -157,7 +157,7 @@ slash_frames = [
     for i in range(6)
 ]
 
-# Revolver icon
+# Revolver icon - CENTER BOTTOM POSITION
 REVOLVER_ICON_SIZE = 56
 REVOLVER_COST = 30
 REVOLVER_MAX_BULLETS = 12
@@ -247,9 +247,11 @@ def ensure_map_area(top, left, bottom, right):
 def world_to_screen(wx, wy, cam_x, cam_y):
     return (wx - cam_x) * cell_size, (wy - cam_y) * cell_size
 
+# UPDATED: Revolver HUD now centered at bottom with padding
 def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
-    ix = w - REVOLVER_ICON_SIZE - 20
-    iy = h - REVOLVER_ICON_SIZE - 20
+    # Center bottom with 20px padding from bottom
+    ix = w // 2 - REVOLVER_ICON_SIZE // 2
+    iy = h - REVOLVER_ICON_SIZE - 20  # 20px padding from bottom
 
     if not unlocked:
         if coin_count >= REVOLVER_COST:
@@ -278,17 +280,18 @@ def draw_revolver_hud(surface, coin_count, unlocked, equipped, bul, w, h, gt):
         surface.blit(revolver_icon, (ix, iy))
         pip_r = 5
         pip_gap = 14
+        start_x = ix + (REVOLVER_ICON_SIZE - (6 * pip_gap)) // 2  # Center bullets under icon
         for b in range(REVOLVER_MAX_BULLETS):
             row_n = b // 6
             col_n = b % 6
-            px = ix + col_n * pip_gap + pip_r
-            py = iy - 14 - row_n * 14
+            px = start_x + col_n * pip_gap + pip_r
+            py = iy + REVOLVER_ICON_SIZE + 8 + row_n * 12
             color = (220, 180, 50) if b < bul else (55, 55, 55)
             pygame.draw.circle(surface, color, (px, py), pip_r)
         hint = "[1] equipped" if equipped else "[1] equip"
-        draw_text(surface, hint, 17, ix + REVOLVER_ICON_SIZE//2, iy+REVOLVER_ICON_SIZE+12, (190,190,190))
+        draw_text(surface, hint, 17, ix + REVOLVER_ICON_SIZE//2, iy+REVOLVER_ICON_SIZE+35, (190,190,190))
 
-# NEW: Draw speed boost HUD
+# NEW: Draw speed boost HUD - moved to top right since revolver is now at bottom
 def draw_speed_hud(surface, w, h, gt):
     # Draw lightning icon in top right area
     icon_size = 40
